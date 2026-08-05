@@ -53,3 +53,4 @@ tubityx-release.keystore
 # Local build script configurations
 scripts/build_config.sh
 scripts/temp_key.p8
+google_play_credentials.json
