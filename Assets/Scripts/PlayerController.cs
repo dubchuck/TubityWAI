@@ -110,18 +110,22 @@ namespace TubityWAI
             for (int i = 0; i < transform.childCount; i++)
             {
                 Transform child = transform.GetChild(i);
-                Renderer r = child.GetComponent<Renderer>();
-                if (r != null)
+                PlayerSphere sphereComp = child.GetComponent<PlayerSphere>();
+                if (sphereComp != null)
                 {
-                    SphereInfo info = new SphereInfo();
-                    info.transform = child;
-                    info.material = r.material; // Instance copy to modify at runtime
-                    info.baseScale = child.localScale;
-                    if (info.material.HasProperty("_EmissionColor"))
+                    Renderer r = child.GetComponent<Renderer>();
+                    if (r != null)
                     {
-                        info.baseEmissionColor = info.material.GetColor("_EmissionColor");
+                        SphereInfo info = new SphereInfo();
+                        info.transform = child;
+                        info.material = r.material; // Instance copy to modify at runtime
+                        info.baseScale = child.localScale;
+                        if (info.material.HasProperty("_EmissionColor"))
+                        {
+                            info.baseEmissionColor = info.material.GetColor("_EmissionColor");
+                        }
+                        childSpheres.Add(info);
                     }
-                    childSpheres.Add(info);
                 }
             }
         }
@@ -165,6 +169,10 @@ namespace TubityWAI
             {
                 spacePressed = Input.GetKeyDown(KeyCode.Space);
             }
+
+            // 3. Process mobile touch & editor mouse inputs
+            ProcessTouchAndMouseInputs(ref steerInput, ref spacePressed);
+
 
             // 3. Apply steering (independent in-air and on-ground steering)
             float steerAmount = steerInput * angularSpeed * Time.deltaTime;
@@ -391,6 +399,66 @@ namespace TubityWAI
                 Vector3 localUp = -wallDir;
                 Quaternion targetLocalRot = Quaternion.LookRotation(Vector3.forward, localUp);
                 sphere.transform.localRotation = Quaternion.Slerp(sphere.transform.localRotation, targetLocalRot, rotationSmoothing * Time.deltaTime);
+            }
+        }
+
+        private void ProcessTouchAndMouseInputs(ref float steerInput, ref bool spacePressed)
+        {
+            // Process Mobile Touches
+            if (Input.touchCount > 0)
+            {
+                for (int i = 0; i < Input.touchCount; i++)
+                {
+                    Touch touch = Input.GetTouch(i);
+                    Vector2 pos = touch.position;
+
+                    // Bottom third of screen: Jump (trigger on Began)
+                    if (pos.y < Screen.height / 3f)
+                    {
+                        if (touch.phase == UnityEngine.TouchPhase.Began)
+                        {
+                            spacePressed = true;
+                        }
+                    }
+                    else
+                    {
+                        // Left/Right division for top two-thirds
+                        if (pos.x < Screen.width / 2f)
+                        {
+                            steerInput = -1f;
+                        }
+                        else
+                        {
+                            steerInput = 1f;
+                        }
+                    }
+                }
+            }
+            // Process Editor Mouse Clicks (for easy mock testing/play in Editor)
+            else if (Input.GetMouseButton(0) || Input.GetMouseButtonDown(0))
+            {
+                Vector3 mousePos = Input.mousePosition;
+
+                // Bottom third of screen: Jump (trigger on Down)
+                if (mousePos.y < Screen.height / 3f)
+                {
+                    if (Input.GetMouseButtonDown(0))
+                    {
+                        spacePressed = true;
+                    }
+                }
+                else if (Input.GetMouseButton(0))
+                {
+                    // Left/Right division for top two-thirds
+                    if (mousePos.x < Screen.width / 2f)
+                    {
+                        steerInput = -1f;
+                    }
+                    else
+                    {
+                        steerInput = 1f;
+                    }
+                }
             }
         }
     }

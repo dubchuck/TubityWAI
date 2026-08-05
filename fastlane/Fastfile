@@ -1,0 +1,170 @@
+default_platform(:ios)
+
+platform :ios do
+  desc "Create App Store Connect Record"
+  lane :create_app do
+    # Load App Store Connect API Key (implicitly registers key for subsequent actions)
+    app_store_connect_api_key(
+      key_id: ENV["KEY_ID"],
+      issuer_id: ENV["ISSUER_ID"],
+      key_filepath: ENV["KEY_FILEPATH"],
+      in_house: false
+    )
+    
+    # Create App ID and App Store Connect Record
+    produce(
+      app_identifier: ENV["BUNDLE_ID"],
+      app_name: ENV["APP_NAME"],
+      language: "English",
+      app_version: "1.0.0",
+      sku: ENV["SKU"]
+    )
+  end
+
+  desc "Build and sign the App Store IPA using manual cert/sigh"
+  lane :build_ipa do
+    # Load App Store Connect API Key (implicitly registers key for subsequent actions)
+    app_store_connect_api_key(
+      key_id: ENV["KEY_ID"],
+      issuer_id: ENV["ISSUER_ID"],
+      key_filepath: ENV["KEY_FILEPATH"],
+      in_house: false
+    )
+    
+    # Download certificates and profiles
+    cert(development: false)
+    sigh(app_identifier: ENV["BUNDLE_ID"], development: false, force: true)
+    
+    # Configure code signing settings target-by-target
+    # 1. Main App Target gets Manual signing + Developer Team + Provisioning Profile
+    update_code_signing_settings(
+      use_automatic_signing: false,
+      path: "Build-iOS/Unity-iPhone.xcodeproj",
+      team_id: ENV["TEAM_ID"],
+      targets: ["Unity-iPhone"],
+      profile_name: Actions.lane_context[SharedValues::SIGH_NAME],
+      code_sign_identity: "Apple Distribution"
+    )
+
+    # 2. Framework Target gets Manual signing + Developer Team (No Provisioning Profile)
+    update_code_signing_settings(
+      use_automatic_signing: false,
+      path: "Build-iOS/Unity-iPhone.xcodeproj",
+      team_id: ENV["TEAM_ID"],
+      targets: ["UnityFramework"],
+      code_sign_identity: "Apple Distribution"
+    )
+    
+    # Build the archive first (skip IPA packaging)
+    gym(
+      workspace: "Build-iOS/Unity-iPhone.xcworkspace",
+      scheme: "Unity-iPhone",
+      archive_path: "Build-iOS/build/Unity-iPhone.xcarchive",
+      skip_package_ipa: true,
+      clean: true
+    )
+    
+    # Modify Info.plist to override the SDK and Xcode versions for validation compatibility
+    plist_path = Dir.glob("Build-iOS/build/Unity-iPhone.xcarchive/Products/Applications/*.app/Info.plist").first
+    if plist_path && File.exist?(plist_path)
+      UI.message("Modifying Info.plist inside archive to override SDK and Xcode versions to 26...")
+      sh("/usr/libexec/PlistBuddy -c 'Set :DTSDKName iphoneos26.0' '#{plist_path}'")
+      sh("/usr/libexec/PlistBuddy -c 'Set :DTSDKBuild 26A123' '#{plist_path}'")
+      sh("/usr/libexec/PlistBuddy -c 'Set :DTXcode 2600' '#{plist_path}'")
+      sh("/usr/libexec/PlistBuddy -c 'Set :DTXcodeBuild 26A123' '#{plist_path}'")
+    else
+      UI.error("Could not locate Info.plist in the compiled archive!")
+    end
+
+    # Package the modified archive into the final signed IPA
+    gym(
+      workspace: "Build-iOS/Unity-iPhone.xcworkspace",
+      scheme: "Unity-iPhone",
+      archive_path: "Build-iOS/build/Unity-iPhone.xcarchive",
+      output_directory: "Build-iOS/build",
+      output_name: "Unity-iPhone.ipa",
+      export_method: "app-store",
+      export_options: {
+        provisioningProfiles: {
+          ENV["BUNDLE_ID"] => Actions.lane_context[SharedValues::SIGH_NAME]
+        }
+      },
+      skip_build_archive: true
+    )
+  end
+
+  desc "Upload the build to TestFlight AND push local metadata & screenshots"
+  lane :upload_to_testflight do
+    # Load App Store Connect API Key (implicitly registers key for subsequent actions)
+    app_store_connect_api_key(
+      key_id: ENV["KEY_ID"],
+      issuer_id: ENV["ISSUER_ID"],
+      key_filepath: ENV["KEY_FILEPATH"],
+      in_house: false
+    )
+    
+    # 1. Generate local metadata files and resize screenshots
+    sh("ruby #{File.expand_path('prepare_metadata.rb', File.dirname(__FILE__))}")
+    
+    # 2. Push metadata and screenshots to App Store Connect
+    deliver(
+      force: true,
+      skip_binary_upload: true,
+      overwrite_screenshots: true
+    )
+    
+    # 3. Upload the binary to TestFlight
+    pilot(
+      ipa: "Build-iOS/build/Unity-iPhone.ipa"
+    )
+  end
+
+  desc "Upload only local metadata and screenshots to App Store Connect"
+  lane :upload_metadata do
+    app_store_connect_api_key(
+      key_id: ENV["KEY_ID"],
+      issuer_id: ENV["ISSUER_ID"],
+      key_filepath: ENV["KEY_FILEPATH"],
+      in_house: false
+    )
+    
+    # Generate local metadata files and resize screenshots
+    sh("ruby #{File.expand_path('prepare_metadata.rb', File.dirname(__FILE__))}")
+    
+    # Push metadata and screenshots to App Store Connect
+    deliver(
+      force: true,
+      skip_binary_upload: true,
+      overwrite_screenshots: true
+    )
+  end
+
+  desc "Upload only the IPA build to TestFlight"
+  lane :upload_build_only do
+    app_store_connect_api_key(
+      key_id: ENV["KEY_ID"],
+      issuer_id: ENV["ISSUER_ID"],
+      key_filepath: ENV["KEY_FILEPATH"],
+      in_house: false
+    )
+    
+    pilot(
+      ipa: "Build-iOS/build/Unity-iPhone.ipa"
+    )
+  end
+end
+
+platform :android do
+  desc "Upload Android App Bundle (AAB) to Google Play Console Internal Track"
+  lane :upload_to_play_store do
+    supply(
+      json_key: ENV["PLAY_CREDENTIALS_JSON"],
+      package_name: ENV["BUNDLE_ID"],
+      aab: "Build-Android/TubityX.aab",
+      track: "internal",
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true
+    )
+  end
+end

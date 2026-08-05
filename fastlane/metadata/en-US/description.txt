@@ -1,0 +1,10 @@
+Roll through endless neon tunnels, dodge obstacles, and collect gems in this fast-paced action arcade game!
+
+Navigate your glowing sphere through winding 3D cylinder tracks, using intuitive controls to rotate left and right or jump over dangerous gaps. With procedurally generated levels, the speed and challenge increase the further you go. Can you survive the cyber tunnel?
+
+Key Features:
+• Vibrant high-definition neon aesthetics and particle effects.
+• Physics-based mechanics with responsive rolling and jumping.
+• Challenging obstacle placements that test your reflexes.
+• Seamless AdMob banner and interstitial integration.
+• Compelling retro-futuristic soundscapes and gameplay rhythm.

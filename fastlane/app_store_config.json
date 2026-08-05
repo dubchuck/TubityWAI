@@ -1,0 +1,55 @@
+{
+  "locales": {
+    "en-US": {
+      "name": "TubityX",
+      "subtitle": "Neon Tunnel Rolling Arcade",
+      "description": "Roll through endless neon tunnels, dodge obstacles, and collect gems in this fast-paced action arcade game!\n\nNavigate your glowing sphere through winding 3D cylinder tracks, using intuitive controls to rotate left and right or jump over dangerous gaps. With procedurally generated levels, the speed and challenge increase the further you go. Can you survive the cyber tunnel?\n\nKey Features:\n• Vibrant high-definition neon aesthetics and particle effects.\n• Physics-based mechanics with responsive rolling and jumping.\n• Challenging obstacle placements that test your reflexes.\n• Seamless AdMob banner and interstitial integration.\n• Compelling retro-futuristic soundscapes and gameplay rhythm.",
+      "keywords": "tunnel runner,neon ball,sphere roll,arcade game,endless tunnel,cyber run,retro neon,tube runner",
+      "release_notes": "Initial release of TubityX! Experience high-speed neon tunnel gameplay with physics-based controls, rotating obstacles, collectible gems, and full AdMob support.",
+      "support_url": "https://dubchuck.com/support",
+      "marketing_url": "https://dubchuck.com",
+      "privacy_url": "https://dubchuck.com/privacy",
+      "promotional_text": "Dodge obstacles and jump gaps in a fast-paced neon cyber tunnel!"
+    }
+  },
+  "screenshots": {
+    "source_directory": "../AppStore/Screenshots/Source",
+    "targets": [
+      {
+        "device_type": "iPhone8Plus",
+        "width": 2208,
+        "height": 1242,
+        "name_suffix": "iphone_5.5"
+      },
+      {
+        "device_type": "iPhoneXSMax",
+        "width": 2688,
+        "height": 1242,
+        "name_suffix": "iphone_6.5"
+      },
+      {
+        "device_type": "iPhone14ProMax",
+        "width": 2796,
+        "height": 1290,
+        "name_suffix": "iphone_6.7"
+      },
+      {
+        "device_type": "iPadPro129",
+        "width": 2732,
+        "height": 2048,
+        "name_suffix": "ipad_12.9"
+      }
+    ],
+    "files": [
+      {
+        "source": "screenshot_menu.png"
+      },
+      {
+        "source": "screenshot_gameplay.png"
+      },
+      {
+        "source": "screenshot_action.png"
+      }
+    ]
+  }
+}

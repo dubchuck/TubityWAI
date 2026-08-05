@@ -19,17 +19,24 @@ namespace TubityWAI
         [Header("Collectible Settings")]
         public Material[] coinMaterials;
 
+        [Header("Obstacle Settings")]
+        public Material obstacleMaterial; // standard solid red
+        public Material[] transparentObstacleMaterials; // passable color-coded shields
+        public float obstacleSpawnProbability = 0.45f; // 45% chance to spawn at each marker ring
+
         private void Start()
         {
             GenerateMesh();
             SpawnMarkers();
             SpawnCoins();
+            SpawnObstacles();
         }
 
         public void ResetSegment(float newZ)
         {
             transform.position = new Vector3(0f, 0f, newZ);
             SpawnCoins();
+            SpawnObstacles();
         }
 
         private void GenerateMesh()
@@ -207,7 +214,7 @@ namespace TubityWAI
 
                     SphereCollider sphereCol = coin.AddComponent<SphereCollider>();
                     sphereCol.isTrigger = true;
-                    sphereCol.radius = 1.3f; // Generous trigger envelope (will be scaled to 0.65 units in world space)
+                    sphereCol.radius = 1.3f; // Generous trigger envelope
 
                     // Assign color-matching emissive material
                     MeshRenderer mr = coin.GetComponent<MeshRenderer>();
@@ -224,6 +231,65 @@ namespace TubityWAI
                     collectible.hoverAmplitude = 0.08f;
                     collectible.hoverSpeed = 3.5f;
                 }
+            }
+        }
+
+        private void SpawnObstacles()
+        {
+            // 1. Destroy any existing obstacle child objects (for pool recycling cleanup)
+            for (int i = transform.childCount - 1; i >= 0; i--)
+            {
+                Transform child = transform.GetChild(i);
+                if (child.name.StartsWith("Obstacle") || child.GetComponent<Obstacle>() != null)
+                {
+                    Destroy(child.gameObject);
+                }
+            }
+
+            // 2. Loop along the segment at marker intervals and spawn obstacles centered with marker rings
+            float currentZ = markerInterval;
+            while (currentZ < length)
+            {
+                if (Random.value < obstacleSpawnProbability)
+                {
+                    GameObject obsObj = new GameObject("Obstacle");
+                    obsObj.transform.SetParent(this.transform, false);
+                    obsObj.transform.localPosition = new Vector3(0f, 0f, currentZ);
+
+                    // Choose a random rotation around the tube Z-axis
+                    float angleDeg = Random.Range(0f, 360f);
+                    obsObj.transform.localRotation = Quaternion.Euler(0f, 0f, angleDeg);
+
+                    Obstacle obs = obsObj.AddComponent<Obstacle>();
+                    obs.radius = radius;
+                    
+                    // Choose a random thickness from 0.5 up to half the tube height (radius * 0.5)
+                    float[] thicknesses = { 0.5f, 1.0f, 1.5f, 2.0f, radius * 0.5f };
+                    obs.thickness = thicknesses[Random.Range(0, thicknesses.Length)];
+                    obs.depth = 0.4f;     // Z-axis thickness centered at the marker ring
+                    
+                    // Pick a random arc angle
+                    float[] arcAngles = { 60f, 90f, 120f };
+                    obs.arcAngle = arcAngles[Random.Range(0, arcAngles.Length)];
+                    
+                    // 50% chance to spawn a color-coded passable obstacle, 50% chance for solid red
+                    bool isColorCoded = (Random.value < 0.5f) && (transparentObstacleMaterials != null && transparentObstacleMaterials.Length > 0);
+
+                    if (isColorCoded)
+                    {
+                        int colorIdx = Random.Range(0, transparentObstacleMaterials.Length);
+                        obs.isColorCoded = true;
+                        obs.targetColorIndex = colorIdx;
+                        obs.obstacleMaterial = transparentObstacleMaterials[colorIdx];
+                    }
+                    else
+                    {
+                        obs.isColorCoded = false;
+                        obs.targetColorIndex = -1;
+                        obs.obstacleMaterial = obstacleMaterial;
+                    }
+                }
+                currentZ += markerInterval;
             }
         }
     }

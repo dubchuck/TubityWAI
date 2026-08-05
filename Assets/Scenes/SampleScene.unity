@@ -152,7 +152,8 @@ MonoBehaviour:
   radialSegments: 128
   angularSpeed: 7
   forwardSpeed: 5
-  sphereCount: 2
+  speedBoostMultiplier: 2
+  sphereCount: 5
   sphereColors:
   - {r: 1, g: 0.4, b: 0, a: 1}
   - {r: 0, g: 1, b: 0, a: 1}
@@ -182,6 +183,10 @@ MonoBehaviour:
   volumetricLightFalloff: 1.8
   volumetricLightPulseScale: 1.25
   volumetricLightPulseBrightness: 1.8
+  coinColor: {r: 1, g: 0.75, b: 0, a: 1}
+  obstacleColor: {r: 0.18867922, g: 0.07386969, b: 0.09683163, a: 1}
+  obstacleSpawnProbability: 0.45
+  showMainMenu: 1
 --- !u!4 &330543994
 Transform:
   m_ObjectHideFlags: 0

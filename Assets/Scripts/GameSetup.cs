@@ -99,15 +99,97 @@ namespace TubityWAI
         [Tooltip("Color/Brightness pulse multiplier when crossing a marker.")]
         public float volumetricLightPulseBrightness = 1.8f;
 
-        [Header("Collectible Settings")]
         [Tooltip("Neon color of the collectible coins.")]
         public Color coinColor = new Color(1f, 0.75f, 0f); // Neon Gold/Yellow
 
+        [Header("Obstacle Settings")]
+        [Tooltip("Neon color of the obstacles.")]
+        public Color obstacleColor = new Color(1f, 0f, 0.2f); // Neon Hot Pink/Red
+
+        [Range(0f, 1f)]
+        [Tooltip("Spawn probability of obstacles at each marker ring.")]
+        public float obstacleSpawnProbability = 0.45f;
+
+        [Header("Menu Settings")]
+        [Tooltip("Enable to show the two-layer paginated Main Menu at startup.")]
+        public bool showMainMenu = true;
+
+        public static GameSetup Instance { get; private set; }
+
+        private void Awake()
+        {
+            if (Instance == null)
+            {
+                Instance = this;
+
+                // Spawn MainMenu programmatically at startup if toggled
+                if (showMainMenu && FindFirstObjectByType<MainMenu>() == null)
+                {
+                    GameObject menuObj = new GameObject("MainMenuController");
+                    menuObj.AddComponent<MainMenu>();
+                }
+            }
+            else
+            {
+                Destroy(gameObject);
+            }
+        }
+
         private void Start()
         {
+            // Check if a replay was triggered from the Game Over screen
+            if (GameManager.shouldReplayOnLoad && GameManager.lastLevelConfig != null)
+            {
+                GameManager.shouldReplayOnLoad = false;
+                StartGame(GameManager.lastSphereCount, GameManager.lastLevelConfig);
+                return;
+            }
+
+            // If MainMenu is in the scene, wait for user selection. Otherwise run immediately with defaults for editor testing.
+            if (FindFirstObjectByType<MainMenu>() != null)
+            {
+                return;
+            }
+
+            StartGameWithDefaultSettings();
+        }
+
+        private void StartGameWithDefaultSettings()
+        {
+            LevelConfig defaultConfig = new LevelConfig(1, forwardSpeed, obstacleSpawnProbability, speedBoostMultiplier);
+            StartGame(sphereCount, defaultConfig);
+        }
+
+        public void StartGame(int chosenCount, LevelConfig config)
+        {
+            // Override setup settings with chosen level parameters
+            this.sphereCount = chosenCount;
+            this.forwardSpeed = config.forwardSpeed;
+            this.obstacleSpawnProbability = config.obstacleSpawnProbability;
+            this.speedBoostMultiplier = config.speedBoostMultiplier;
+
+            // Instantiate GameManager singleton if not already present
+            if (GameManager.Instance == null)
+            {
+                GameObject managerObj = new GameObject("GameManager");
+                managerObj.AddComponent<GameManager>();
+            }
+
+            // Instantiate AdMobManager singleton if not already present
+            if (AdMobManager.Instance == null)
+            {
+                GameObject adManagerObj = new GameObject("AdMobManager");
+                adManagerObj.AddComponent<AdMobManager>();
+            }
+
+            // Cache current parameters on the manager instance for potential replay selection
+            GameManager.Instance.currentSphereCount = chosenCount;
+            GameManager.Instance.currentLevelConfig = config;
+
             // 1. Create Materials
             Material tunnelMaterial = CreateSpecularMaterial("TunnelMaterial", tunnelBaseColor, 0.85f);
             Material markerMaterial = CreateEmissiveMaterial("MarkerMaterial", markerColor, 4.5f, 0.1f);
+            Material obstacleMaterial = CreateEmissiveMaterial("ObstacleMaterial", obstacleColor, 4.0f, 0.1f);
 
             // Generate detailed dashed/antialiased texture for the marker rings
             Texture2D markerTex = GenerateMarkerTexture();
@@ -128,7 +210,6 @@ namespace TubityWAI
             {
                 activeTexture = GenerateGridTexture(gridLineColor, tunnelBaseColor);
             }
-
             if (activeTexture != null)
             {
                 string texProperty = tunnelMaterial.HasProperty("_BaseMap") ? "_BaseMap" : "_MainTex";
@@ -160,10 +241,13 @@ namespace TubityWAI
 
             // Create matching emissive coin materials for each player sphere color
             Material[] coinMaterials = new Material[actualCount];
+            // Create matching transparent materials for color-coded passable obstacles
+            Material[] transparentObstacleMaterials = new Material[actualCount];
             for (int i = 0; i < actualCount; i++)
             {
                 Color color = sphereColors[i % sphereColors.Length];
                 coinMaterials[i] = CreateEmissiveMaterial("CoinMaterial_" + i, color, 4.5f, 0.1f);
+                transparentObstacleMaterials[i] = CreateTransparentMaterial("TransparentObstacleMaterial_" + i, color, 4.0f, 0.1f);
             }
             for (int i = 0; i < actualCount; i++)
             {
@@ -193,70 +277,49 @@ namespace TubityWAI
                 Light light = lightObj.AddComponent<Light>();
                 light.type = LightType.Point;
                 light.color = color;
-                light.intensity = 15f / actualCount; // Split intensity to prevent over-exposure
-                light.range = tubeRadius * 1.5f;
+                light.range = 7f;
+                light.intensity = 1.5f;
+
+                // Position spheres equidistant around the entire 360-degree circle
+                float startAngle = (i * 2f * Mathf.PI) / actualCount;
+
+                float x = Mathf.Sin(startAngle) * tubeRadius;
+                float y = -Mathf.Cos(startAngle) * tubeRadius;
+                sphereObj.transform.localPosition = new Vector3(x, y, 0f);
             }
 
-            // Setup Volumetric Light Portal
+
+            // 3. Setup Volumetric Light Card
+            GameObject volLightObj = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            volLightObj.name = "VolumetricLightPortal";
+            Destroy(volLightObj.GetComponent<Collider>()); // No collision needed for card
+
             Texture2D glowTex = GenerateRadialGlowTexture(volumetricLightOpacity, volumetricLightFalloff);
-            
-            // If the user specified a custom color, use it. Otherwise, fallback to the marker color.
             Color glowColor = volumetricLightColor;
             if (glowColor.r == 0f && glowColor.g == 0f && glowColor.b == 0f)
             {
                 glowColor = markerColor;
             }
-            glowColor.a = 1f; // governed by texture opacity
-            
-            Material glowMat = CreateAdditiveGlowMaterial(glowColor, glowTex);
+            glowColor.a = 1f;
 
-            GameObject portalObj = GameObject.CreatePrimitive(PrimitiveType.Quad);
-            portalObj.name = "VolumetricLightPortal";
-            
-            // Remove collider since we only need rendering
-            Collider portalCollider = portalObj.GetComponent<Collider>();
-            if (portalCollider != null) Destroy(portalCollider);
-            
-            portalObj.GetComponent<MeshRenderer>().sharedMaterial = glowMat;
+            Material volLightMaterial = CreateAdditiveGlowMaterial(glowColor, glowTex);
+            volLightObj.GetComponent<MeshRenderer>().sharedMaterial = volLightMaterial;
 
-            // Position it at the end of the visible tunnel
-            float portalDist = volumetricLightDistance;
-            portalObj.transform.position = new Vector3(0f, 0f, portalDist);
-            
-            // Scaled slightly larger than tube diameter to cover the hole
-            Vector3 portalScale = new Vector3(tubeRadius * volumetricLightSizeMultiplier, tubeRadius * volumetricLightSizeMultiplier, 1f);
-            portalObj.transform.localScale = portalScale;
-            portalObj.transform.rotation = Quaternion.LookRotation(Vector3.forward);
+            // Anchor it to player controller group so it remains visible at depth
+            volLightObj.transform.SetParent(playerGroup.transform, false);
+            volLightObj.transform.localPosition = new Vector3(0f, 0f, 175f); // 175 units ahead
+            volLightObj.transform.localScale = new Vector3(tubeRadius * volumetricLightSizeMultiplier, tubeRadius * volumetricLightSizeMultiplier, 1f); // Cover the tube cross-section
 
-            // Link to player controller for animation
-            playerController.volumetricLightTransform = portalObj.transform;
-            playerController.volumetricLightMaterial = glowMat;
+            // Bind portal references in the PlayerController for rhythmic pulses
+            playerController.volumetricLightTransform = volLightObj.transform;
+            playerController.volumetricLightMaterial = volLightMaterial;
             playerController.volumetricLightBaseColor = glowColor;
-            playerController.volumetricLightDistance = portalDist;
-            playerController.baseVolumetricLightScale = portalScale;
+            playerController.baseVolumetricLightScale = volLightObj.transform.localScale;
             playerController.volumetricLightPulseScale = volumetricLightPulseScale;
             playerController.volumetricLightPulseBrightness = volumetricLightPulseBrightness;
 
-            // Setup Game HUD
-            GameObject hudObj = new GameObject("GameHUD");
-            GameHUD hud = hudObj.AddComponent<GameHUD>();
-            hud.player = playerController;
-
-            // 3. Setup Camera
+            // Setup Camera follow target and settings
             Camera mainCam = Camera.main;
-            if (mainCam == null)
-            {
-                GameObject camObj = new GameObject("MainCamera");
-                mainCam = camObj.AddComponent<Camera>();
-                camObj.tag = "MainCamera";
-            }
-
-            // Set camera rendering preferences for high contrast neon look
-            mainCam.clearFlags = CameraClearFlags.SolidColor;
-            mainCam.backgroundColor = Color.black;
-            mainCam.fieldOfView = 65f;
-
-            // Enable high-quality anti-aliasing (SMAA) on the camera data for clean neon edges
             var cameraData = mainCam.GetComponent<UniversalAdditionalCameraData>();
             if (cameraData == null)
             {
@@ -277,6 +340,11 @@ namespace TubityWAI
             camController.followDistance = 7f;
             camController.followSmoothing = 12f;
 
+            // Setup Game HUD
+            GameObject hudObj = new GameObject("GameHUD");
+            GameHUD hud = hudObj.AddComponent<GameHUD>();
+            hud.player = playerController;
+
             // 4. Setup Tunnel Generator
             GameObject tunnelGenObj = new GameObject("TunnelGenerator");
             TunnelGenerator tunnelGen = tunnelGenObj.AddComponent<TunnelGenerator>();
@@ -288,6 +356,9 @@ namespace TubityWAI
             tunnelGen.tunnelMaterial = tunnelMaterial;
             tunnelGen.markerMaterial = markerMaterial;
             tunnelGen.coinMaterials = coinMaterials;
+            tunnelGen.obstacleMaterial = obstacleMaterial;
+            tunnelGen.transparentObstacleMaterials = transparentObstacleMaterials;
+            tunnelGen.obstacleSpawnProbability = obstacleSpawnProbability;
 
             // 5. Setup Ambient Lighting & Dim Existing Lights
             RenderSettings.ambientMode = AmbientMode.Flat;
@@ -593,6 +664,43 @@ namespace TubityWAI
             tex.SetPixels(pixels);
             tex.Apply();
             return tex;
+        }
+
+        private Material CreateTransparentMaterial(string name, Color color, float emissionIntensity, float smoothness)
+        {
+            Shader urpShader = Shader.Find("Universal Render Pipeline/Lit");
+            if (urpShader == null)
+            {
+                urpShader = Shader.Find("Standard");
+            }
+            
+            Material mat = new Material(urpShader);
+            mat.name = name;
+
+            // Configure for standard alpha transparency blending in URP
+            mat.SetFloat("_Surface", 1f); // 1 = Transparent
+            mat.SetFloat("_Blend", 0f);   // 0 = Alpha blend
+            mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            mat.SetInt("_ZWrite", 0);
+            mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+
+            Color baseColor = color * 0.4f;
+            baseColor.a = 0.35f; // Nice holographic transparency alpha
+
+            if (mat.HasProperty("_BaseColor"))
+                mat.SetColor("_BaseColor", baseColor);
+            else if (mat.HasProperty("_Color"))
+                mat.SetColor("_Color", baseColor);
+
+            mat.EnableKeyword("_EMISSION");
+            mat.SetColor("_EmissionColor", color * emissionIntensity);
+
+            if (mat.HasProperty("_Smoothness"))
+                mat.SetFloat("_Smoothness", smoothness);
+
+            return mat;
         }
     }
 }

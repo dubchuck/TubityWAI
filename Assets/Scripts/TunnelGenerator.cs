@@ -23,6 +23,9 @@ namespace TubityWAI
         public Material tunnelMaterial;
         public Material markerMaterial;
         public Material[] coinMaterials;
+        public Material obstacleMaterial;
+        public Material[] transparentObstacleMaterials;
+        public float obstacleSpawnProbability = 0.45f;
 
         private Queue<GameObject> activeSegments = new Queue<GameObject>();
         private float nextSpawnZ = 0f;
@@ -95,6 +98,9 @@ namespace TubityWAI
             segment.tunnelMaterial = tunnelMaterial;
             segment.markerMaterial = markerMaterial;
             segment.coinMaterials = coinMaterials;
+            segment.obstacleMaterial = obstacleMaterial;
+            segment.transparentObstacleMaterials = transparentObstacleMaterials;
+            segment.obstacleSpawnProbability = obstacleSpawnProbability;
 
             activeSegments.Enqueue(segObj);
             nextSpawnZ += segmentLength;
