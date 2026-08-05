@@ -43,3 +43,13 @@ crashlytics-build.properties
 Build-iOS
 Build-Android
 .utmp
+5P4X5YWFH4.cer
+AppStore_com.dubchuck.tubityx.mobileprovision
+AuthKey_S6882J9M3G.p8
+appstore_ios_fastland_credentials.json
+dubchuckgames-google-play-ac94e7240214.json
+tubityx-release.keystore
+
+# Local build script configurations
+scripts/build_config.sh
+scripts/temp_key.p8
