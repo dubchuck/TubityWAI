@@ -70,6 +70,10 @@ namespace TubityWAI
         [HideInInspector]
         public float currentAngle = 0f;
 
+        // Jump state properties for FTUE tutorial tracking
+        public bool IsJumping => isJumping;
+        public bool HasCrossedOver => hasCrossedOver;
+
         // The current Z position along the tube.
         [HideInInspector]
         public float zPos = 0f;

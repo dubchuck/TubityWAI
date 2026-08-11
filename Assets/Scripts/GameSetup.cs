@@ -463,6 +463,13 @@ namespace TubityWAI
             GameHUD hud = hudObj.AddComponent<GameHUD>();
             hud.player = playerController;
 
+            // Setup FTUE Manager if this is the FTUE Tutorial level
+            if (config.levelNumber == 99 || (config.levelName != null && config.levelName.ToUpper().Contains("HOW TO PLAY")))
+            {
+                GameObject ftueObj = new GameObject("FTUEManager");
+                ftueObj.AddComponent<FTUEManager>();
+            }
+
             // 4. Setup Tunnel Generator
             GameObject tunnelGenObj = new GameObject("TunnelGenerator");
             TunnelGenerator tunnelGen = tunnelGenObj.AddComponent<TunnelGenerator>();
