@@ -27,6 +27,10 @@ namespace TubityWAI
         public Material[] transparentObstacleMaterials;
         public float obstacleSpawnProbability = 0.45f;
 
+        [Header("Attraction Settings")]
+        public bool spawnCoins = true;
+        public bool spawnObstacles = true;
+
         private Queue<GameObject> activeSegments = new Queue<GameObject>();
         private float nextSpawnZ = 0f;
 
@@ -46,14 +50,18 @@ namespace TubityWAI
 
         private void Update()
         {
-            if (target == null) return;
-
-            // Query the main camera's actual Z position to ensure segments only recycle
-            // when they are completely behind the camera's field of view.
-            float cameraZ = target.zPos - 10f; // Safe fallback
+            float cameraZ = 0f;
+            if (target != null)
+            {
+                cameraZ = target.zPos - 10f; // Safe fallback
+            }
             if (Camera.main != null)
             {
                 cameraZ = Camera.main.transform.position.z;
+            }
+            else if (target == null)
+            {
+                return;
             }
 
             // Recycle the oldest segment once its end (Z start + segmentLength) is behind the camera
@@ -71,6 +79,8 @@ namespace TubityWAI
                     TunnelSegment segmentScript = oldestSegment.GetComponent<TunnelSegment>();
                     if (segmentScript != null)
                     {
+                        segmentScript.spawnCoins = spawnCoins;
+                        segmentScript.spawnObstacles = spawnObstacles;
                         segmentScript.ResetSegment(nextSpawnZ);
                     }
                     else
@@ -101,6 +111,8 @@ namespace TubityWAI
             segment.obstacleMaterial = obstacleMaterial;
             segment.transparentObstacleMaterials = transparentObstacleMaterials;
             segment.obstacleSpawnProbability = obstacleSpawnProbability;
+            segment.spawnCoins = this.spawnCoins;
+            segment.spawnObstacles = this.spawnObstacles;
 
             activeSegments.Enqueue(segObj);
             nextSpawnZ += segmentLength;

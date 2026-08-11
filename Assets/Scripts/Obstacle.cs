@@ -20,10 +20,13 @@ namespace TubityWAI
         // Pass-through animation states
         private bool isPassingThrough = false;
         private float passTimer = 0f;
-        private float passDuration = 0.3f;
+        private float passDuration = 0.35f;
         private Material matInstance;
         private Color baseColor;
         private Color baseEmissionColor;
+        private Transform collectingSphere;
+        private Vector3 initialWorldPos;
+        private Vector3 initialLocalScale;
 
         private void Start()
         {
@@ -44,11 +47,18 @@ namespace TubityWAI
                 }
                 else
                 {
-                    // 1. Subtle scale pulse on match
-                    float scaleMult = Mathf.Lerp(1f, 1.12f, Mathf.Sin(t * Mathf.PI));
-                    transform.localScale = new Vector3(scaleMult, scaleMult, 1f);
+                    float easeT = t * t;
 
-                    // 2. Smoothly dissolve opacity and glowing emission
+                    // 1. Smoothly shrink scale down to zero into the sphere center
+                    transform.localScale = Vector3.Lerp(initialLocalScale, Vector3.zero, easeT);
+
+                    // 2. Smoothly translate position towards the center of the collecting player sphere
+                    if (collectingSphere != null)
+                    {
+                        transform.position = Vector3.Lerp(initialWorldPos, collectingSphere.position, easeT);
+                    }
+
+                    // 3. Smoothly dissolve opacity and glowing emission
                     if (matInstance != null)
                     {
                         if (matInstance.HasProperty("_BaseColor"))
@@ -236,8 +246,23 @@ namespace TubityWAI
             {
                 if (isColorCoded && sphere.colorIndex == targetColorIndex)
                 {
-                    // Successful color match! Trigger pass-through dissolve animation
-                    StartPassThroughAnimation();
+                    // Successful color match! Resolve player controller to add +3 points to score
+                    PlayerController player = null;
+                    Transform current = other.transform;
+                    while (current != null)
+                    {
+                        player = current.GetComponent<PlayerController>();
+                        if (player != null) break;
+                        current = current.parent;
+                    }
+
+                    if (player != null)
+                    {
+                        player.AddScore(3);
+                    }
+
+                    // Trigger pass-through shrink & dissolve animation into player sphere center
+                    StartPassThroughAnimation(sphere.transform);
                 }
                 else
                 {
@@ -251,10 +276,13 @@ namespace TubityWAI
             }
         }
 
-        private void StartPassThroughAnimation()
+        private void StartPassThroughAnimation(Transform playerSphereTransform)
         {
             isPassingThrough = true;
             passTimer = 0f;
+            collectingSphere = playerSphereTransform;
+            initialWorldPos = transform.position;
+            initialLocalScale = transform.localScale;
 
             // Disable all child triggers so we don't double trigger
             for (int i = 0; i < transform.childCount; i++)
@@ -266,7 +294,7 @@ namespace TubityWAI
                 }
             }
 
-            Debug.Log($"[Obstacle] Color match success! Initiating pass-through dissolve animation.");
+            Debug.Log($"[Obstacle] Color match success! +3 Score. Initiating shrink into player sphere center.");
         }
     }
 

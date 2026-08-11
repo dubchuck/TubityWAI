@@ -69,7 +69,7 @@ namespace TubityWAI
 
         private void Awake()
         {
-            if (Instance == null)
+            if (Instance == null || Instance == this)
             {
                 // If attached to a multi-purpose GameObject (e.g. GameSetup), detach onto a dedicated GameObject so the host object is not marked DontDestroyOnLoad
                 if (transform.parent != null || GetComponents<Component>().Length > 2)
@@ -208,6 +208,13 @@ namespace TubityWAI
         /// </summary>
         public void ProcessGameOverAd(Action onCompleted)
         {
+            if (PlayerPrefs.GetInt("AdsRemoved", 0) == 1)
+            {
+                Debug.Log("[AdMobManager] Ads have been removed. Skipping ad presentation.");
+                onCompleted?.Invoke();
+                return;
+            }
+
             _gameOverCounter++;
             SaveStateToPrefs();
             Debug.Log($"[AdMobManager] Game Over recorded. Progress: {_gameOverCounter}/{_targetGameOverThreshold}");
@@ -237,6 +244,13 @@ namespace TubityWAI
         /// </summary>
         public bool TryShowInterstitial(Action onDismissedCallback = null)
         {
+            if (PlayerPrefs.GetInt("AdsRemoved", 0) == 1)
+            {
+                Debug.Log("[AdMobManager] Ads have been removed. Bypassing TryShowInterstitial.");
+                onDismissedCallback?.Invoke();
+                return false;
+            }
+
             if (_isSdkInitialized && _interstitialAd != null && _interstitialAd.CanShowAd())
             {
                 Debug.Log("[AdMobManager] Presenting Interstitial Ad...");
@@ -254,6 +268,10 @@ namespace TubityWAI
 
         private void OnDestroy()
         {
+            if (Instance == this)
+            {
+                Instance = null;
+            }
             if (_interstitialAd != null)
             {
                 _interstitialAd.Destroy();

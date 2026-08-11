@@ -1,3 +1,23 @@
+# ---------------------------------------------------------------------------
+# Monkey-patch Fastlane Deliver to catch "No data" API crash on new versions
+# ---------------------------------------------------------------------------
+require 'deliver/upload_metadata'
+
+class ::Deliver::UploadMetadata
+  alias_method :orig_review_attachment_file, :review_attachment_file
+  def review_attachment_file(version)
+    begin
+      orig_review_attachment_file(version)
+    rescue => e
+      if e.to_s.include?("No data")
+        UI.important("Caught 'No data' error in review_attachment_file. This is normal for new app versions without initialized App Review info on App Store Connect. Skipping review attachment processing.")
+      else
+        raise e
+      end
+    end
+  end
+end
+
 default_platform(:ios)
 
 platform :ios do
@@ -19,6 +39,217 @@ platform :ios do
       app_version: "1.0.0",
       sku: ENV["SKU"]
     )
+  end
+
+  desc "Create Remove Ads In-App Purchase"
+  lane :create_remove_ads_iap do
+    # Load App Store Connect API Key (implicitly registers key for subsequent actions)
+    app_store_connect_api_key(
+      key_id: ENV["KEY_ID"],
+      issuer_id: ENV["ISSUER_ID"],
+      key_filepath: ENV["KEY_FILEPATH"],
+      in_house: false
+    )
+    
+    bundle_id = ENV["BUNDLE_ID"] || "com.dubchuck.tubityx"
+    product_id = "#{bundle_id}.removeads"
+    
+    # Find App
+    apps = Spaceship::ConnectAPI::App.all(filter: { bundleId: bundle_id })
+    if apps.empty?
+      UI.user_error!("App with bundle ID #{bundle_id} not found on App Store Connect.")
+    end
+    app = apps.first
+    app_id = app.id
+    UI.message("Found App ID: #{app_id} for #{bundle_id}")
+    
+    token_text = Spaceship::ConnectAPI.client.token.text
+    
+    # REST API Helper within the lane
+    make_request = ->(method, path, body = nil) do
+      uri = URI("https://api.appstoreconnect.apple.com/#{path}")
+      http = Net::HTTP.new(uri.host, uri.port)
+      http.use_ssl = true
+
+      req_class = case method.to_sym
+                  when :get then Net::HTTP::Get
+                  when :post then Net::HTTP::Post
+                  else raise "Unsupported HTTP method #{method}"
+                  end
+
+      req = req_class.new(uri)
+      req["Authorization"] = "Bearer #{token_text}"
+      req["Content-Type"] = "application/json"
+      req.body = body.to_json if body
+
+      res = http.request(req)
+      if res.code.to_i >= 400
+        UI.important("ASC API Response #{res.code}: #{res.body}")
+      end
+      JSON.parse(res.body) rescue nil
+    end
+
+    # Step 1: Check existing IAPs
+    UI.message("Checking existing in-app purchases...")
+    iaps_res = make_request.call(:get, "v1/apps/#{app_id}/inAppPurchasesV2")
+    existing_iap = nil
+    if iaps_res && iaps_res["data"]
+      existing_iap = iaps_res["data"].find { |d| d["attributes"] && d["attributes"]["productId"] == product_id }
+    end
+
+    iap_id = nil
+    if existing_iap
+      iap_id = existing_iap["id"]
+      UI.success("In-App Purchase '#{product_id}' already exists (ID: #{iap_id}).")
+    else
+      # Step 2: Create IAP
+      UI.message("Creating In-App Purchase '#{product_id}'...")
+      create_payload = {
+        data: {
+          type: "inAppPurchases",
+          attributes: {
+            name: "Remove Ads",
+            productId: product_id,
+            inAppPurchaseType: "NON_CONSUMABLE"
+          },
+          relationships: {
+            app: {
+              data: {
+                type: "apps",
+                id: app_id
+              }
+            }
+          }
+        }
+      }
+      create_res = make_request.call(:post, "v2/inAppPurchases", create_payload)
+      if create_res && create_res["data"]
+        iap_id = create_res["data"]["id"]
+        UI.success("In-App Purchase created successfully (ID: #{iap_id}).")
+      else
+        UI.user_error!("Failed to create in-app purchase. Response: #{create_res.inspect}")
+      end
+    end
+
+    # Step 3: Check or Create English Localization
+    UI.message("Checking in-app purchase localizations...")
+    locs_res = make_request.call(:get, "v1/inAppPurchases/#{iap_id}/inAppPurchaseLocalizations")
+    has_loc = false
+    if locs_res && locs_res["data"]
+      has_loc = locs_res["data"].any? { |d| d["attributes"] && d["attributes"]["locale"] == "en-US" }
+    end
+
+    if has_loc
+      UI.success("en-US localization already exists.")
+    else
+      UI.message("Creating en-US localization...")
+      loc_payload = {
+        data: {
+          type: "inAppPurchaseLocalizations",
+          attributes: {
+            name: "Remove Ads",
+            description: "Permanently remove all interstitial ads from the game.",
+            locale: "en-US"
+          },
+          relationships: {
+            inAppPurchaseV2: {
+              data: {
+                type: "inAppPurchases",
+                id: iap_id
+              }
+            }
+          }
+        }
+      }
+      loc_res = make_request.call(:post, "v1/inAppPurchaseLocalizations", loc_payload)
+      if loc_res && loc_res["data"]
+        UI.success("Localization created successfully.")
+      else
+        UI.important("Failed to create localization. Response: #{loc_res.inspect}")
+      end
+    end
+
+    # Step 4: Fetch USA $0.99 Price Point ID
+    UI.message("Fetching price points for USA storefront...")
+    price_points_res = make_request.call(:get, "v2/inAppPurchases/#{iap_id}/pricePoints?filter[territory]=USA")
+    price_point_id = nil
+    if price_points_res && price_points_res["data"]
+      matching_pp = price_points_res["data"].find { |d| d["attributes"] && d["attributes"]["customerPrice"] == "0.99" }
+      if matching_pp
+        price_point_id = matching_pp["id"]
+        UI.success("Found USD 0.99 price point ID: #{price_point_id}")
+      end
+    end
+
+    if price_point_id.nil?
+      UI.important("Could not locate USD 0.99 price point. Available options:")
+      if price_points_res && price_points_res["data"]
+        price_points_res["data"].each do |d|
+          UI.message("  - ID: #{d['id']}, Price: #{d['attributes']['customerPrice']}")
+        end
+      end
+      UI.user_error!("Could not resolve price point ID for $0.99 USD.")
+    end
+
+    # Step 5: Create or Update Price Schedule
+    UI.message("Applying USD 0.99 pricing schedule...")
+    schedule_payload = {
+      data: {
+        type: "inAppPurchasePriceSchedules",
+        relationships: {
+          inAppPurchase: {
+            data: {
+              type: "inAppPurchases",
+              id: iap_id
+            }
+          },
+          baseTerritory: {
+            data: {
+              type: "territories",
+              id: "USA"
+            }
+          },
+          manualPrices: {
+            data: [
+              {
+                type: "inAppPurchasePrices",
+                id: "${new_price}"
+              }
+            ]
+          }
+        }
+      },
+      included: [
+        {
+          type: "inAppPurchasePrices",
+          id: "${new_price}",
+          attributes: {
+            startDate: nil
+          },
+          relationships: {
+            inAppPurchaseV2: {
+              data: {
+                type: "inAppPurchases",
+                id: iap_id
+              }
+            },
+            inAppPurchasePricePoint: {
+              data: {
+                type: "inAppPurchasePricePoints",
+                id: price_point_id
+              }
+            }
+          }
+        }
+      ]
+    }
+
+    schedule_res = make_request.call(:post, "v1/inAppPurchasePriceSchedules", schedule_payload)
+    if schedule_res && schedule_res["data"]
+      UI.success("Pricing schedule applied successfully (USD 0.99).")
+    else
+      UI.important("Pricing schedule could not be verified/applied. Response: #{schedule_res.inspect}")
+    end
   end
 
   desc "Build and sign the App Store IPA using manual cert/sigh"

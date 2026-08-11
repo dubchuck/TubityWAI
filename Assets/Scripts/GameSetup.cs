@@ -4,6 +4,7 @@ using UnityEngine.Rendering.Universal;
 
 namespace TubityWAI
 {
+    [ExecuteAlways]
     public class GameSetup : MonoBehaviour
     {
         [Header("Global Track Settings")]
@@ -118,12 +119,13 @@ namespace TubityWAI
 
         private void Awake()
         {
-            if (Instance == null)
+            if (Instance == null || Instance == this)
             {
                 Instance = this;
 
-                // Spawn MainMenu programmatically at startup if toggled
-                if (showMainMenu && FindFirstObjectByType<MainMenu>() == null)
+                // Spawn MainMenu programmatically at startup if toggled and not replaying
+                bool isReplaying = GameManager.shouldReplayOnLoad && GameManager.lastLevelConfig != null;
+                if (showMainMenu && !isReplaying && FindFirstObjectByType<MainMenu>() == null)
                 {
                     GameObject menuObj = new GameObject("MainMenuController");
                     menuObj.AddComponent<MainMenu>();
@@ -131,23 +133,43 @@ namespace TubityWAI
             }
             else
             {
-                Destroy(gameObject);
+                if (Application.isPlaying)
+                {
+                    Destroy(gameObject);
+                }
+                else
+                {
+                    DestroyImmediate(gameObject);
+                }
+            }
+        }
+
+        private void OnDestroy()
+        {
+            if (Instance == this)
+            {
+                Instance = null;
             }
         }
 
         private void Start()
         {
+            if (!Application.isPlaying) return; // Skip game initialization when in Editor edit mode
+
             // Check if a replay was triggered from the Game Over screen
             if (GameManager.shouldReplayOnLoad && GameManager.lastLevelConfig != null)
             {
+                int replayCount = GameManager.lastSphereCount;
+                LevelConfig replayConfig = GameManager.lastLevelConfig;
+                StartGame(replayCount, replayConfig);
                 GameManager.shouldReplayOnLoad = false;
-                StartGame(GameManager.lastSphereCount, GameManager.lastLevelConfig);
                 return;
             }
 
-            // If MainMenu is in the scene, wait for user selection. Otherwise run immediately with defaults for editor testing.
+            // If MainMenu is in the scene, wait for user selection and start attraction mode. Otherwise run immediately with defaults for editor testing.
             if (FindFirstObjectByType<MainMenu>() != null)
             {
+                StartAttractionMode();
                 return;
             }
 
@@ -162,8 +184,56 @@ namespace TubityWAI
 
         public void StartGame(int chosenCount, LevelConfig config)
         {
-            // Override setup settings with chosen level parameters
-            this.sphereCount = chosenCount;
+            // Hide MainMenu if present in scene
+            MainMenu mainMenu = FindFirstObjectByType<MainMenu>();
+            if (mainMenu != null)
+            {
+                mainMenu.Hide();
+            }
+
+            // 0. Clean up Attraction Mode if active
+            GameObject attractionGen = GameObject.Find("AttractionTunnelGenerator");
+            if (attractionGen != null) Destroy(attractionGen);
+
+            GameObject attractionWorld = GameObject.Find("AttractionModeWorldContainer");
+            if (attractionWorld != null) Destroy(attractionWorld);
+
+            GameObject attractionCam = GameObject.Find("AttractionModeCameraContainer");
+            if (attractionCam != null) Destroy(attractionCam);
+            
+            // Clean up any generated tunnel segments from attraction mode
+            TunnelSegment[] existingSegments = FindObjectsByType<TunnelSegment>(FindObjectsSortMode.None);
+            foreach (var segment in existingSegments)
+            {
+                Destroy(segment.gameObject);
+            }
+
+            // Reset camera position and target
+            Camera mainCam = Camera.main;
+            CameraController camController = null;
+            if (mainCam != null)
+            {
+                mainCam.transform.position = Vector3.zero;
+                mainCam.transform.rotation = Quaternion.identity;
+                if (config.isTransparentTube)
+                {
+                    mainCam.clearFlags = CameraClearFlags.SolidColor;
+                    mainCam.backgroundColor = new Color(0.015f, 0.015f, 0.04f); // Deep synthwave night sky
+                }
+                else
+                {
+                    mainCam.clearFlags = CameraClearFlags.Skybox; // Restore default skybox for gameplay
+                }
+                
+                camController = mainCam.gameObject.GetComponent<CameraController>();
+                if (camController != null)
+                {
+                    camController.target = null;
+                }
+            }
+
+            // Override setup settings with chosen level parameters (force 1 sphere for test levels)
+            this.sphereCount = config.isTestLevel ? 1 : chosenCount;
             this.forwardSpeed = config.forwardSpeed;
             this.obstacleSpawnProbability = config.obstacleSpawnProbability;
             this.speedBoostMultiplier = config.speedBoostMultiplier;
@@ -187,7 +257,16 @@ namespace TubityWAI
             GameManager.Instance.currentLevelConfig = config;
 
             // 1. Create Materials
-            Material tunnelMaterial = CreateSpecularMaterial("TunnelMaterial", tunnelBaseColor, 0.85f);
+            Material tunnelMaterial;
+            if (config.isTransparentTube)
+            {
+                tunnelMaterial = CreateTransparentMaterial("TransparentTunnelMaterial", new Color(0f, 0.85f, 1f, 0.3f), 0.5f, 0.95f);
+            }
+            else
+            {
+                tunnelMaterial = CreateSpecularMaterial("TunnelMaterial", tunnelBaseColor, 0.85f);
+            }
+
             Material markerMaterial = CreateEmissiveMaterial("MarkerMaterial", markerColor, 4.5f, 0.1f);
             Material obstacleMaterial = CreateEmissiveMaterial("ObstacleMaterial", obstacleColor, 4.0f, 0.1f);
 
@@ -208,7 +287,9 @@ namespace TubityWAI
             Texture2D activeTexture = tunnelTexture;
             if (activeTexture == null)
             {
-                activeTexture = GenerateGridTexture(gridLineColor, tunnelBaseColor);
+                Color gLineColor = config.isTransparentTube ? new Color(0f, 1f, 0.85f, 1f) : gridLineColor;
+                Color tBaseColor = config.isTransparentTube ? new Color(0.01f, 0.02f, 0.06f, 0.3f) : tunnelBaseColor;
+                activeTexture = GenerateGridTexture(gLineColor, tBaseColor);
             }
             if (activeTexture != null)
             {
@@ -253,9 +334,30 @@ namespace TubityWAI
             {
                 Color color = sphereColors[i % sphereColors.Length];
                 
-                // Generate a retro-cyber grid texture specifically matching this sphere's color
-                Texture2D sphereGridTex = GenerateSphereGridTexture(color * 2.0f, color * 0.15f);
-                Material playerMaterial = CreateSphereMaterial("PlayerMaterial_" + i, color, 2.5f, 0.8f, sphereGridTex);
+                // Override color if it's a test level
+                if (config.isTestLevel)
+                {
+                    if (config.levelNumber == 101)
+                        color = new Color(0.78f, 0.05f, 1f); // Plasma Purple
+                    else if (config.levelNumber == 102)
+                        color = new Color(0f, 0.85f, 1f); // Warp Blue/Cyan
+                    else if (config.levelNumber == 103)
+                        color = new Color(1f, 0.55f, 0f); // Gauntlet Amber/Orange
+                    else if (config.levelNumber == 106)
+                        color = new Color(0f, 1f, 0.75f); // Cyber Cyan/Teal
+                }
+                
+                Material playerMaterial;
+                if (config.isTestLevel)
+                {
+                    playerMaterial = CreateEmissiveMaterial("PlayerMaterial_" + i, color, 2.5f, 0.8f);
+                }
+                else
+                {
+                    // Generate a retro-cyber grid texture specifically matching this sphere's color
+                    Texture2D sphereGridTex = GenerateSphereGridTexture(color * 2.0f, color * 0.15f);
+                    playerMaterial = CreateSphereMaterial("PlayerMaterial_" + i, color, 2.5f, 0.8f, sphereGridTex);
+                }
 
                 GameObject sphereObj = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                 sphereObj.name = "PlayerSphere_" + i;
@@ -279,6 +381,20 @@ namespace TubityWAI
                 light.color = color;
                 light.range = 7f;
                 light.intensity = 1.5f;
+
+                // If test level, attach the procedural EnergySphereEffects component
+                if (config.isTestLevel)
+                {
+                    EnergySphereEffects effects = sphereObj.AddComponent<EnergySphereEffects>();
+                    if (config.levelNumber == 101)
+                        effects.preset = EnergySphereEffects.EffectPreset.Plasma;
+                    else if (config.levelNumber == 102)
+                        effects.preset = EnergySphereEffects.EffectPreset.Warp;
+                    else if (config.levelNumber == 103)
+                        effects.preset = EnergySphereEffects.EffectPreset.Gauntlet;
+                    else if (config.levelNumber == 106)
+                        effects.preset = EnergySphereEffects.EffectPreset.City;
+                }
 
                 // Position spheres equidistant around the entire 360-degree circle
                 float startAngle = (i * 2f * Mathf.PI) / actualCount;
@@ -319,26 +435,28 @@ namespace TubityWAI
             playerController.volumetricLightPulseBrightness = volumetricLightPulseBrightness;
 
             // Setup Camera follow target and settings
-            Camera mainCam = Camera.main;
-            var cameraData = mainCam.GetComponent<UniversalAdditionalCameraData>();
-            if (cameraData == null)
+            if (mainCam != null)
             {
-                cameraData = mainCam.gameObject.AddComponent<UniversalAdditionalCameraData>();
-            }
-            if (cameraData != null)
-            {
-                cameraData.antialiasing = AntialiasingMode.SubpixelMorphologicalAntiAliasing;
-                cameraData.antialiasingQuality = AntialiasingQuality.High;
-            }
+                var cameraData = mainCam.GetComponent<UniversalAdditionalCameraData>();
+                if (cameraData == null)
+                {
+                    cameraData = mainCam.gameObject.AddComponent<UniversalAdditionalCameraData>();
+                }
+                if (cameraData != null)
+                {
+                    cameraData.antialiasing = AntialiasingMode.SubpixelMorphologicalAntiAliasing;
+                    cameraData.antialiasingQuality = AntialiasingQuality.High;
+                }
 
-            CameraController camController = mainCam.gameObject.GetComponent<CameraController>();
-            if (camController == null)
-            {
-                camController = mainCam.gameObject.AddComponent<CameraController>();
+                camController = mainCam.gameObject.GetComponent<CameraController>();
+                if (camController == null)
+                {
+                    camController = mainCam.gameObject.AddComponent<CameraController>();
+                }
+                camController.target = playerController;
+                camController.followDistance = 7f;
+                camController.followSmoothing = 12f;
             }
-            camController.target = playerController;
-            camController.followDistance = 7f;
-            camController.followSmoothing = 12f;
 
             // Setup Game HUD
             GameObject hudObj = new GameObject("GameHUD");
@@ -386,27 +504,34 @@ namespace TubityWAI
             }
         }
 
-        private void SetupPostProcessing()
+        private void SetupPostProcessing(float bloomIntensity = 1.8f, float bloomThreshold = 0.85f, float bloomScatter = 0.7f)
         {
             // Check if there is already a volume
             Volume existingVolume = FindFirstObjectByType<Volume>();
-            if (existingVolume != null) return;
+            Volume volume = existingVolume;
+            if (volume == null)
+            {
+                GameObject volumeObj = new GameObject("NeonPostProcessing");
+                volume = volumeObj.AddComponent<Volume>();
+                volume.isGlobal = true;
+                volume.priority = 1f;
 
-            GameObject volumeObj = new GameObject("NeonPostProcessing");
-            Volume volume = volumeObj.AddComponent<Volume>();
-            volume.isGlobal = true;
-            volume.priority = 1f;
+                VolumeProfile profile = ScriptableObject.CreateInstance<VolumeProfile>();
+                profile.name = "NeonBloomProfile";
+                volume.sharedProfile = profile;
+            }
 
-            VolumeProfile profile = ScriptableObject.CreateInstance<VolumeProfile>();
-            profile.name = "NeonBloomProfile";
-
-            Bloom bloom = profile.Add<Bloom>(true);
+            // Find or add Bloom override
+            Bloom bloom;
+            if (!volume.sharedProfile.TryGet<Bloom>(out bloom))
+            {
+                bloom = volume.sharedProfile.Add<Bloom>(true);
+            }
+            
             bloom.active = true;
-            bloom.intensity.Override(1.8f);
-            bloom.threshold.Override(0.85f);
-            bloom.scatter.Override(0.7f);
-
-            volume.sharedProfile = profile;
+            bloom.intensity.Override(bloomIntensity);
+            bloom.threshold.Override(bloomThreshold);
+            bloom.scatter.Override(bloomScatter);
         }
 
         private Material CreateEmissiveMaterial(string name, Color color, float emissionIntensity, float smoothness)
@@ -701,6 +826,237 @@ namespace TubityWAI
                 mat.SetFloat("_Smoothness", smoothness);
 
             return mat;
+        }
+
+        public void StartAttractionMode()
+        {
+            // Clean up any existing attraction containers first (safety check)
+            GameObject oldWorld = GameObject.Find("AttractionModeWorldContainer");
+            if (oldWorld != null) DestroyImmediate(oldWorld);
+            GameObject oldCamContainer = GameObject.Find("AttractionModeCameraContainer");
+            if (oldCamContainer != null) DestroyImmediate(oldCamContainer);
+
+            // 1. Create Materials (transparent black tunnel base for attraction mode)
+            Material tunnelMaterial = CreateSpecularMaterial("TunnelMaterial", new Color(0f, 0f, 0f, 0.35f), 0.98f);
+            tunnelMaterial.SetFloat("_Surface", 1.0f); // 0 = Opaque, 1 = Transparent
+            tunnelMaterial.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            tunnelMaterial.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            tunnelMaterial.SetInt("_ZWrite", 0);
+            tunnelMaterial.DisableKeyword("_ALPHATEST_ON");
+            tunnelMaterial.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            tunnelMaterial.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+
+            Material markerMaterial = CreateEmissiveMaterial("MarkerMaterial", markerColor, 4.5f, 0.1f);
+            
+            // Generate detailed dashed/antialiased texture for the marker rings
+            Texture2D markerTex = GenerateMarkerTexture();
+            if (markerTex != null)
+            {
+                string texProperty = markerMaterial.HasProperty("_BaseMap") ? "_BaseMap" : "_MainTex";
+                markerMaterial.SetTexture(texProperty, markerTex);
+                if (markerMaterial.HasProperty("_EmissionMap"))
+                {
+                    markerMaterial.SetTexture("_EmissionMap", markerTex);
+                }
+                markerMaterial.SetTextureScale(texProperty, new Vector2(16f, 1f));
+            }
+
+            // 2. Setup Camera
+            Camera mainCam = Camera.main;
+            if (mainCam != null)
+            {
+                mainCam.transform.position = Vector3.zero;
+                mainCam.transform.rotation = Quaternion.identity;
+
+                // Clear to solid dark blue-black color matching the black tunnel
+                mainCam.clearFlags = CameraClearFlags.SolidColor;
+                mainCam.backgroundColor = new Color(0.015f, 0.015f, 0.025f);
+
+                CameraController camController = mainCam.gameObject.GetComponent<CameraController>();
+                if (camController == null)
+                {
+                    camController = mainCam.gameObject.AddComponent<CameraController>();
+                }
+                camController.target = null;
+                camController.attractionSpeed = forwardSpeed * 0.3f; // relaxed speed
+            }
+
+            // 3. Create Attraction Containers
+            GameObject worldContainer = new GameObject("AttractionModeWorldContainer");
+            GameObject cameraContainer = new GameObject("AttractionModeCameraContainer");
+            if (mainCam != null)
+            {
+                cameraContainer.transform.SetParent(mainCam.transform, false);
+            }
+
+            // 4. Setup Reflective Long Road (World Space)
+            GameObject roadObj = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            roadObj.name = "AttractionRoad";
+            roadObj.transform.SetParent(worldContainer.transform, false);
+            // Adjust position and X-scale as requested
+            roadObj.transform.position = new Vector3(0f, -3.0f, 500f);
+            roadObj.transform.localScale = new Vector3(20.0f, 0.1f, 1000f);
+            DestroyImmediate(roadObj.GetComponent<Collider>()); // performance
+
+            MeshRenderer roadRenderer = roadObj.GetComponent<MeshRenderer>();
+            roadRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            roadRenderer.receiveShadows = false;
+
+            Material roadMat = CreateSpecularMaterial("AttractionRoadMaterial", new Color(0.12f, 0.12f, 0.15f), 0.98f); // metallic dark grey
+            roadRenderer.sharedMaterial = roadMat;
+
+            // Make road follow camera Z so it appears infinitely long
+            AttractionModeRotator roadFollow = roadObj.AddComponent<AttractionModeRotator>();
+            roadFollow.followCameraZ = true;
+            roadFollow.followOffsetZ = 500f;
+
+            // Headlight attached to camera container to illuminate road and platform reflections
+            GameObject headlightObj = new GameObject("AttractionHeadlight");
+            headlightObj.transform.SetParent(cameraContainer.transform, false);
+            headlightObj.transform.localPosition = new Vector3(0f, 2f, 2f); // slightly raised headlight
+            Light headlight = headlightObj.AddComponent<Light>();
+            headlight.type = LightType.Point;
+            headlight.color = new Color(0.85f, 0.95f, 1f); // cool white light
+            headlight.intensity = 2.5f;
+            headlight.range = 25f;
+
+            // 5. Setup Rotating Neon Arcs (World Space)
+            // Spawn arcs every 3 units along the track, from Z = 10 to Z = 600 (approx. 200 arcs)
+            for (float z = 10f; z < 600f; z += 3f)
+            {
+                GameObject arcObj = new GameObject("NeonArc_" + z);
+                arcObj.transform.SetParent(worldContainer.transform, false);
+                arcObj.transform.position = new Vector3(0f, 0f, z);
+
+                LineRenderer lineRenderer = arcObj.AddComponent<LineRenderer>();
+                lineRenderer.useWorldSpace = false;
+                lineRenderer.loop = false;
+                lineRenderer.startWidth = 0.18f;
+                lineRenderer.endWidth = 0.18f;
+
+                int pointsCount = 40; // Double the segments to make the arcs twice as smooth/round
+                lineRenderer.positionCount = pointsCount;
+                Vector3[] points = new Vector3[pointsCount];
+                float startAngle = Random.Range(0f, 2f * Mathf.PI);
+                float arcLength = Random.Range(Mathf.PI * 0.5f, Mathf.PI * 1.5f); // 90 to 270 degrees
+
+                for (int i = 0; i < pointsCount; i++)
+                {
+                    float progress = (float)i / (pointsCount - 1);
+                    float angle = startAngle + progress * arcLength;
+                    float x = Mathf.Sin(angle) * (tubeRadius - 0.04f);
+                    float y = -Mathf.Cos(angle) * (tubeRadius - 0.04f);
+                    points[i] = new Vector3(x, y, 0f);
+                }
+                lineRenderer.SetPositions(points);
+
+                // Alternating Cyan and Neon Magenta/Pink colors
+                Color neonColor = (Random.value < 0.5f) ? new Color(0f, 1f, 1f) : new Color(1f, 0f, 0.5f);
+                lineRenderer.sharedMaterial = CreateEmissiveMaterial("ArcMat_" + z, neonColor, 5.5f, 0f);
+
+                // Add rotator component to spin the arc
+                AttractionModeRotator rotator = arcObj.AddComponent<AttractionModeRotator>();
+                rotator.rotationSpeed = new Vector3(0f, 0f, Random.Range(-35f, 35f));
+            }
+
+            // 6. Setup Glowing Swirling Core Sphere (World Space, resting directly on the road)
+            GameObject sphereObj = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            sphereObj.name = "AttractionCoreSphere";
+            sphereObj.transform.SetParent(worldContainer.transform, false);
+            // Sits directly on the road at Y = -2.0
+            sphereObj.transform.position = new Vector3(0f, -2.0f, 14f); 
+            sphereObj.transform.localScale = new Vector3(1.8f, 1.8f, 1.8f);
+            DestroyImmediate(sphereObj.GetComponent<Collider>());
+
+            MeshRenderer sphereRenderer = sphereObj.GetComponent<MeshRenderer>();
+            sphereRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            sphereRenderer.receiveShadows = false;
+
+            Material sphereMat = CreateSpecularMaterial("CoreSphereMaterial", Color.white, 0.7f);
+            sphereMat.EnableKeyword("_EMISSION");
+            Texture2D coreTex = Resources.Load<Texture2D>("tubityx_core");
+            if (coreTex != null)
+            {
+                string texProperty = sphereMat.HasProperty("_BaseMap") ? "_BaseMap" : "_MainTex";
+                sphereMat.SetTexture(texProperty, coreTex);
+                if (sphereMat.HasProperty("_EmissionMap"))
+                {
+                    sphereMat.SetTexture("_EmissionMap", coreTex);
+                    sphereMat.SetColor("_EmissionColor", Color.white * 1.5f); // Glow intensely based on texture colors!
+                }
+            }
+            sphereObj.GetComponent<MeshRenderer>().sharedMaterial = sphereMat;
+
+            // Rotate core sphere around multiple axes and follow camera Z
+            AttractionModeRotator sphereRotator = sphereObj.AddComponent<AttractionModeRotator>();
+            sphereRotator.rotationSpeed = new Vector3(15f, 30f, 10f);
+            sphereRotator.followCameraZ = true;
+            sphereRotator.followOffsetZ = 14f;
+
+            // 8. Setup Subtle Dust Starfield Particles (Camera Space, scrolling and wrapping)
+            for (int i = 0; i < 200; i++) // Increased to 200 particles
+            {
+                GameObject star = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                star.name = "StarFieldParticle";
+                star.transform.SetParent(cameraContainer.transform, false);
+
+                float angle = Random.Range(0f, 2f * Mathf.PI);
+                float dist = Random.Range(6.5f, 14f); // Spawn outside the cylinder walls
+                float x = Mathf.Sin(angle) * dist;
+                float y = -Mathf.Cos(angle) * dist;
+                float z = Random.Range(5f, 50f); // Spawn ahead of camera
+
+                star.transform.localPosition = new Vector3(x, y, z);
+                star.transform.localScale = new Vector3(0.08f, 0.08f, 0.08f);
+                DestroyImmediate(star.GetComponent<Collider>());
+
+                // Match star color randomly to the neon arc colors (Cyan or Neon Magenta/Pink)
+                Color starColor = (Random.value < 0.5f) ? new Color(0f, 1f, 1f) : new Color(1f, 0f, 0.5f);
+                Material starMat = CreateEmissiveMaterial("StarMat_" + i, starColor, 2.5f, 0f);
+                star.GetComponent<MeshRenderer>().sharedMaterial = starMat;
+
+                // Scrolling Z speed to move stars past the camera
+                AttractionModeRotator starScroll = star.AddComponent<AttractionModeRotator>();
+                starScroll.localZSpeed = -forwardSpeed * 0.4f; // scroll backwards
+                starScroll.wrapMinZ = 3f;
+                starScroll.wrapMaxZ = 50f;
+            }
+
+            // 9. Setup Tunnel Generator (World Space)
+            GameObject tunnelGenObj = new GameObject("AttractionTunnelGenerator");
+            TunnelGenerator tunnelGen = tunnelGenObj.AddComponent<TunnelGenerator>();
+            tunnelGen.target = null;
+            tunnelGen.radius = tubeRadius;
+            tunnelGen.segmentLength = segmentLength;
+            tunnelGen.radialSegments = radialSegments;
+            tunnelGen.markerInterval = markerInterval;
+            tunnelGen.tunnelMaterial = tunnelMaterial;
+            tunnelGen.markerMaterial = markerMaterial;
+            tunnelGen.spawnCoins = false;
+            tunnelGen.spawnObstacles = false;
+
+            // 10. Setup Ambient Lighting & Dim Directional Lights
+            RenderSettings.ambientMode = AmbientMode.Flat;
+            RenderSettings.ambientLight = new Color(0.04f, 0.04f, 0.06f);
+
+            Light[] allLights = FindObjectsByType<Light>(FindObjectsSortMode.None);
+            foreach (Light light in allLights)
+            {
+                if (light.type == LightType.Directional)
+                {
+                    light.intensity = 0.08f;
+                    light.color = new Color(0.1f, 0.1f, 0.22f);
+                }
+            }
+
+            try
+            {
+                SetupPostProcessing(2.2f, 0.7f, 0.7f); // Subtler bloom to prevent scene wash-out
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning("Bloom post-processing initialization skipped or failed: " + e.Message);
+            }
         }
     }
 }

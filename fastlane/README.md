@@ -23,6 +23,14 @@ For _fastlane_ installation instructions, see [Installing _fastlane_](https://do
 
 Create App Store Connect Record
 
+### ios create_remove_ads_iap
+
+```sh
+[bundle exec] fastlane ios create_remove_ads_iap
+```
+
+Create Remove Ads In-App Purchase
+
 ### ios build_ipa
 
 ```sh
@@ -37,7 +45,23 @@ Build and sign the App Store IPA using manual cert/sigh
 [bundle exec] fastlane ios upload_to_testflight
 ```
 
-Upload the build to TestFlight
+Upload the build to TestFlight AND push local metadata & screenshots
+
+### ios upload_metadata
+
+```sh
+[bundle exec] fastlane ios upload_metadata
+```
+
+Upload only local metadata and screenshots to App Store Connect
+
+### ios upload_build_only
+
+```sh
+[bundle exec] fastlane ios upload_build_only
+```
+
+Upload only the IPA build to TestFlight
 
 ----
 

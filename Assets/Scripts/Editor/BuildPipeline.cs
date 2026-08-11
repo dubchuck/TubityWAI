@@ -26,6 +26,27 @@ namespace TubityWAI
                 Debug.Log($"[BuildPipeline] Set Product Name to: {envAppName}");
             }
 
+            // Set or auto-increment iOS build number
+            string envBuildNumber = System.Environment.GetEnvironmentVariable("BUILD_NUMBER");
+            if (!string.IsNullOrEmpty(envBuildNumber))
+            {
+                PlayerSettings.iOS.buildNumber = envBuildNumber;
+                Debug.Log($"[BuildPipeline] Set iOS buildNumber from env to: {envBuildNumber}");
+            }
+            else
+            {
+                if (int.TryParse(PlayerSettings.iOS.buildNumber, out int iosBuildNum))
+                {
+                    PlayerSettings.iOS.buildNumber = (iosBuildNum + 1).ToString();
+                    Debug.Log($"[BuildPipeline] Auto-incremented iOS buildNumber to: {PlayerSettings.iOS.buildNumber}");
+                }
+                else
+                {
+                    PlayerSettings.iOS.buildNumber = "1";
+                    Debug.Log($"[BuildPipeline] Initialized iOS buildNumber to: 1");
+                }
+            }
+
             Debug.Log("[BuildPipeline] Configuring App Icon...");
             AssetDatabase.ImportAsset("Assets/AppIcon.png", ImportAssetOptions.ForceUpdate);
             Texture2D appIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/AppIcon.png");
@@ -115,6 +136,20 @@ namespace TubityWAI
             {
                 PlayerSettings.productName = envAppName;
                 Debug.Log($"[BuildPipeline] Set Product Name to: {envAppName}");
+            }
+
+            // Set or auto-increment Android bundle version code
+            string envVersionCode = System.Environment.GetEnvironmentVariable("VERSION_CODE");
+            if (!string.IsNullOrEmpty(envVersionCode) && int.TryParse(envVersionCode, out int code))
+            {
+                PlayerSettings.Android.bundleVersionCode = code;
+                Debug.Log($"[BuildPipeline] Set Android bundleVersionCode from env to: {code}");
+            }
+            else
+            {
+                int currentCode = PlayerSettings.Android.bundleVersionCode;
+                PlayerSettings.Android.bundleVersionCode = currentCode + 1;
+                Debug.Log($"[BuildPipeline] Auto-incremented Android bundleVersionCode from {currentCode} to: {PlayerSettings.Android.bundleVersionCode}");
             }
 
             Debug.Log("[BuildPipeline] Configuring App Icon...");

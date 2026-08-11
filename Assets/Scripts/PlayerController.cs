@@ -135,6 +135,11 @@ namespace TubityWAI
             Coins++;
         }
 
+        public void AddScore(int points)
+        {
+            Score += points;
+        }
+
         private void Update()
         {
             // 1. Handle keyboard inputs (supporting both steering and speed boost)
@@ -153,21 +158,12 @@ namespace TubityWAI
 
                 isDownPressed = Keyboard.current.downArrowKey.isPressed || Keyboard.current.sKey.isPressed;
             }
-            else
-            {
-                steerInput = Input.GetAxisRaw("Horizontal");
-                isDownPressed = Input.GetKey(KeyCode.DownArrow) || Input.GetKey(KeyCode.S);
-            }
 
             // 2. Handle Space jump inputs
             bool spacePressed = false;
             if (Keyboard.current != null)
             {
                 spacePressed = Keyboard.current.spaceKey.wasPressedThisFrame;
-            }
-            else
-            {
-                spacePressed = Input.GetKeyDown(KeyCode.Space);
             }
 
             // 3. Process mobile touch & editor mouse inputs
@@ -194,12 +190,25 @@ namespace TubityWAI
             TimeElapsed += Time.deltaTime;
             float activeSpeed = forwardSpeed * (isDownPressed ? speedBoostMultiplier : 1f);
             zPos += activeSpeed * Time.deltaTime;
-            transform.position = new Vector3(0f, 0f, zPos);
 
-            // Update Volumetric Light Position ahead of the player
+            // Get the curve offset at the current zPos
+            Vector3 curveOffset = Vector3.zero;
+            LevelConfig config = (GameManager.Instance != null) ? GameManager.Instance.currentLevelConfig : null;
+            if (config != null)
+            {
+                curveOffset = config.GetCurveOffset(zPos);
+            }
+            transform.position = new Vector3(curveOffset.x, curveOffset.y, zPos);
+
+            // Update Volumetric Light Position ahead of the player relative to curve
             if (volumetricLightTransform != null)
             {
-                volumetricLightTransform.position = new Vector3(0f, 0f, zPos + volumetricLightDistance);
+                Vector3 lightCurveOffset = Vector3.zero;
+                if (config != null)
+                {
+                    lightCurveOffset = config.GetCurveOffset(zPos + volumetricLightDistance);
+                }
+                volumetricLightTransform.position = new Vector3(lightCurveOffset.x, lightCurveOffset.y, zPos + volumetricLightDistance);
             }
 
             // 4. Update Jump State Machine
@@ -404,59 +413,77 @@ namespace TubityWAI
 
         private void ProcessTouchAndMouseInputs(ref float steerInput, ref bool spacePressed)
         {
-            // Process Mobile Touches
-            if (Input.touchCount > 0)
-            {
-                for (int i = 0; i < Input.touchCount; i++)
-                {
-                    Touch touch = Input.GetTouch(i);
-                    Vector2 pos = touch.position;
+            // Process Mobile Touches using new Input System
+            var touchscreen = Touchscreen.current;
+            bool touchProcessed = false;
 
-                    // Bottom third of screen: Jump (trigger on Began)
-                    if (pos.y < Screen.height / 3f)
+            if (touchscreen != null)
+            {
+                for (int i = 0; i < touchscreen.touches.Count; i++)
+                {
+                    var touch = touchscreen.touches[i];
+                    if (touch.press.isPressed)
                     {
-                        if (touch.phase == UnityEngine.TouchPhase.Began)
+                        touchProcessed = true;
+                        Vector2 pos = touch.position.ReadValue();
+
+                        // Bottom third of screen: Jump (trigger on Began)
+                        if (pos.y < Screen.height / 3f)
                         {
-                            spacePressed = true;
-                        }
-                    }
-                    else
-                    {
-                        // Left/Right division for top two-thirds
-                        if (pos.x < Screen.width / 2f)
-                        {
-                            steerInput = -1f;
+                            if (touch.press.wasPressedThisFrame)
+                            {
+                                spacePressed = true;
+                            }
                         }
                         else
                         {
-                            steerInput = 1f;
+                            // Left/Right division for top two-thirds
+                            if (pos.x < Screen.width / 2f)
+                            {
+                                steerInput = -1f;
+                            }
+                            else
+                            {
+                                steerInput = 1f;
+                            }
                         }
                     }
                 }
             }
-            // Process Editor Mouse Clicks (for easy mock testing/play in Editor)
-            else if (Input.GetMouseButton(0) || Input.GetMouseButtonDown(0))
-            {
-                Vector3 mousePos = Input.mousePosition;
 
-                // Bottom third of screen: Jump (trigger on Down)
-                if (mousePos.y < Screen.height / 3f)
+            // Process Editor Mouse Clicks using new Input System (only if touch didn't handle it)
+            if (!touchProcessed)
+            {
+                var mouse = Mouse.current;
+                if (mouse != null)
                 {
-                    if (Input.GetMouseButtonDown(0))
+                    bool isPressed = mouse.leftButton.isPressed;
+                    bool wasPressedThisFrame = mouse.leftButton.wasPressedThisFrame;
+
+                    if (isPressed || wasPressedThisFrame)
                     {
-                        spacePressed = true;
-                    }
-                }
-                else if (Input.GetMouseButton(0))
-                {
-                    // Left/Right division for top two-thirds
-                    if (mousePos.x < Screen.width / 2f)
-                    {
-                        steerInput = -1f;
-                    }
-                    else
-                    {
-                        steerInput = 1f;
+                        Vector2 mousePos = mouse.position.ReadValue();
+
+                        // Bottom third of screen: Jump (trigger on Down)
+                        if (mousePos.y < Screen.height / 3f)
+                        {
+                            if (wasPressedThisFrame)
+                            {
+                                spacePressed = true;
+                            }
+                        }
+                        else if (isPressed)
+                        {
+                            // Left/Right division for top two-thirds
+                            if (mousePos.x < Screen.width / 2f)
+                            {
+                                steerInput = -1f;
+                            }
+                            else
+                            {
+                                steerInput = 1f;
+                            }
+                        }
                     }
                 }
             }
