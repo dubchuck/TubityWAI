@@ -33,6 +33,10 @@ namespace TubityWAI
 
         private void Awake()
         {
+#if UNITY_EDITOR
+            Destroy(gameObject);
+            return;
+#endif
             if (Instance == null)
             {
                 Instance = this;

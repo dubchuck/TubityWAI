@@ -129,11 +129,13 @@ namespace TubityWAI
             {
                 Instance = this;
 
+#if !UNITY_EDITOR
                 if (FindFirstObjectByType<TVOSMenuNavigator>() == null)
                 {
                     GameObject navObj = new GameObject("TVOSMenuNavigatorController");
                     navObj.AddComponent<TVOSMenuNavigator>();
                 }
+#endif
 
                 // Spawn MainMenu programmatically at startup if toggled and not replaying
                 bool isReplaying = GameManager.shouldReplayOnLoad && GameManager.lastLevelConfig != null;
@@ -1123,39 +1125,65 @@ namespace TubityWAI
                 rotator.rotationSpeed = new Vector3(0f, 0f, Random.Range(-35f, 35f));
             }
 
-            // 6. Setup Glowing Swirling Core Sphere (World Space, resting directly on the road)
-            GameObject sphereObj = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            sphereObj.name = "AttractionCoreSphere";
-            sphereObj.transform.SetParent(worldContainer.transform, false);
+            // 6. Setup Glowing Swirling Core Sphere Cluster (Managed by AttractionSphereMorpher)
+            GameObject sphereCluster = new GameObject("AttractionCoreSphereCluster");
+            sphereCluster.transform.SetParent(worldContainer.transform, false);
             // Sits directly on the road at Y = -2.0
-            sphereObj.transform.position = new Vector3(0f, -2.0f, 14f); 
-            sphereObj.transform.localScale = new Vector3(1.8f, 1.8f, 1.8f);
-            DestroyImmediate(sphereObj.GetComponent<Collider>());
+            sphereCluster.transform.position = new Vector3(0f, -0.5f, 14f);
 
-            MeshRenderer sphereRenderer = sphereObj.GetComponent<MeshRenderer>();
+            // Create a template sphere to pass to the morpher
+            GameObject templateSphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            DestroyImmediate(templateSphere.GetComponent<Collider>());
+            
+            MeshRenderer sphereRenderer = templateSphere.GetComponent<MeshRenderer>();
             sphereRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             sphereRenderer.receiveShadows = false;
 
-            Material sphereMat = CreateSpecularMaterial("CoreSphereMaterial", Color.white, 0.7f);
-            sphereMat.EnableKeyword("_EMISSION");
-            Texture2D coreTex = Resources.Load<Texture2D>("tubityx_core");
-            if (coreTex != null)
-            {
-                string texProperty = sphereMat.HasProperty("_BaseMap") ? "_BaseMap" : "_MainTex";
-                sphereMat.SetTexture(texProperty, coreTex);
-                if (sphereMat.HasProperty("_EmissionMap"))
-                {
-                    sphereMat.SetTexture("_EmissionMap", coreTex);
-                    sphereMat.SetColor("_EmissionColor", Color.white * 1.5f); // Glow intensely based on texture colors!
-                }
-            }
-            sphereObj.GetComponent<MeshRenderer>().sharedMaterial = sphereMat;
+            // Apply equipped skin to the template sphere
+            int equippedSkin = GameManager.Instance != null ? GameManager.Instance.EquippedSkin : 0;
+            bool isFXSkin = equippedSkin >= 6;
+            Material templateMat;
+            Color templateColor = new Color(1f, 0.4f, 0f); // Default Neon Orange for template
 
-            // Rotate core sphere around multiple axes and follow camera Z
-            AttractionModeRotator sphereRotator = sphereObj.AddComponent<AttractionModeRotator>();
-            sphereRotator.rotationSpeed = new Vector3(15f, 30f, 10f);
-            sphereRotator.followCameraZ = true;
-            sphereRotator.followOffsetZ = 14f;
+            if ((equippedSkin == 1) || isFXSkin)
+            {
+                templateMat = CreateEmissiveMaterial("TemplateMaterial", templateColor, 3.0f, 0.9f);
+            }
+            else
+            {
+                Texture2D skinTex = null;
+                if (equippedSkin == 0) skinTex = GenerateSphereGridTexture(templateColor * 2.0f, templateColor * 0.15f);
+                else if (equippedSkin == 2) skinTex = GenerateStripesTexture(templateColor * 2.0f, templateColor * 0.15f);
+                else if (equippedSkin == 3) skinTex = GenerateCheckerboardTexture(templateColor * 2.0f, templateColor * 0.15f);
+                else if (equippedSkin == 4) skinTex = GenerateCircuitTexture(templateColor * 2.0f, templateColor * 0.15f);
+                else if (equippedSkin == 5) skinTex = GenerateDiamondTexture(templateColor * 2.0f, templateColor * 0.15f);
+                else skinTex = GenerateSphereGridTexture(templateColor * 2.0f, templateColor * 0.15f); // fallback
+
+                templateMat = CreateSphereMaterial("TemplateMaterial", templateColor, 2.5f, 0.8f, skinTex);
+            }
+            
+            sphereRenderer.sharedMaterial = templateMat;
+
+            // Attach FX if equipped
+            if (isFXSkin)
+            {
+                EnergySphereEffects effects = templateSphere.AddComponent<EnergySphereEffects>();
+                if (equippedSkin == 6) effects.preset = EnergySphereEffects.EffectPreset.Plasma;
+                else if (equippedSkin == 7) effects.preset = EnergySphereEffects.EffectPreset.Warp;
+                else if (equippedSkin == 8) effects.preset = EnergySphereEffects.EffectPreset.Gauntlet;
+                else if (equippedSkin == 9) effects.preset = EnergySphereEffects.EffectPreset.City;
+            }
+
+            // Initialize Morpher
+            AttractionSphereMorpher morpher = sphereCluster.AddComponent<AttractionSphereMorpher>();
+            int lastSpheres = GameManager.lastSphereCount > 0 ? GameManager.lastSphereCount : 3;
+            morpher.Initialize(templateSphere, lastSpheres);
+
+            // Rotate core cluster around multiple axes and follow camera Z
+            AttractionModeRotator clusterRotator = sphereCluster.AddComponent<AttractionModeRotator>();
+            clusterRotator.rotationSpeed = new Vector3(15f, 30f, 10f);
+            clusterRotator.followCameraZ = true;
+            clusterRotator.followOffsetZ = 14f;
 
             // 8. Setup Subtle Dust Starfield Particles (Camera Space, scrolling and wrapping)
             for (int i = 0; i < 200; i++) // Increased to 200 particles

@@ -25,7 +25,7 @@ namespace TubityWAI
         };
 
         private List<LevelConfig> levelConfigs = new List<LevelConfig>();
-        private int selectedSphereCount = 3; // Default selection
+        private int selectedSphereCount = 1; // Default selection
         private int currentLevelPage = 0;   // 0 = Levels 1-6, 1 = Levels 7-12
         private Font defaultFont;
 
@@ -52,6 +52,9 @@ namespace TubityWAI
         private Text shopTotalCoinsText;
         private List<GameObject> shopButtons = new List<GameObject>();
         private int currentShopPage = 0;
+        
+        // 3D Sphere Selector (Layer 1.5)
+        private GameObject layer15Obj;
 
         private struct SkinItem
         {
@@ -75,7 +78,6 @@ namespace TubityWAI
         };
 
         private GameObject logoObj;
-        private GameObject bottomNavObj;
         private GameObject topMenuObj;
         private Image campaignTabImg;
         private Outline campaignTabBorder;
@@ -241,174 +243,85 @@ namespace TubityWAI
             // Create Settings Popup
             CreateSettingsPopup();
 
-            // =========================================================================
-            // BOTTOM NAVIGATION BAR (PLAY, SETTINGS)
-            // =========================================================================
-            bottomNavObj = new GameObject("BottomNavigationBar");
-            bottomNavObj.transform.SetParent(canvasObj.transform, false);
-            RectTransform navRect = bottomNavObj.AddComponent<RectTransform>();
-            navRect.anchorMin = new Vector2(0.5f, 0.08f);
-            navRect.anchorMax = new Vector2(0.5f, 0.08f);
-            navRect.pivot = new Vector2(0.5f, 0f);
-            navRect.anchoredPosition = Vector2.zero;
-            navRect.sizeDelta = new Vector2(1100f, 130f);
-
-            HorizontalLayoutGroup navHlg = bottomNavObj.AddComponent<HorizontalLayoutGroup>();
-            navHlg.spacing = 32f;
-            navHlg.childAlignment = TextAnchor.MiddleCenter;
-            navHlg.childControlWidth = false;
-            navHlg.childControlHeight = false;
-
-            // 1. PLAY BUTTON (Double Right Arrow Icon in Neon Cyan Rim)
-            GameObject playBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(bottomNavObj.transform, new Vector2(250f, 120f), borderNeonColor, "\u25B6\u25B6", borderNeonColor, 60, true);
-            playBtnObj.name = "NavBtn_Play";
-            playBtnObj.GetComponent<Button>().onClick.AddListener(() => {
-                LevelConfig firstLvl = (levelConfigs.Count > 0) ? levelConfigs[0] : null;
-                if (firstLvl != null) LaunchGame(firstLvl);
-            });
-
-            // 2. SHOP BUTTON (Cart/Shop Icon in Neon Gold Rim)
-            GameObject shopBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(bottomNavObj.transform, new Vector2(180f, 120f), textGoldColor, "\uD83D\uDED2", textGoldColor, 50); // Shopping cart emoji
-            shopBtnObj.name = "NavBtn_Shop";
-            shopBtnObj.GetComponent<Button>().onClick.AddListener(ShowShopMenu);
-
-            // 3. SETTINGS BUTTON (Gear Icon in Neon Cyan Rim)
-            GameObject settingsBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(bottomNavObj.transform, new Vector2(180f, 120f), borderNeonColor, "\u2699", borderNeonColor, 56);
-            settingsBtnObj.name = "NavBtn_Settings";
-            settingsBtnObj.GetComponent<Button>().onClick.AddListener(OpenSettingsPopup);
-
             // ==========================================
-            // LAYER 1: SPHERE SELECTION LAYER
+            // LAYER 1: TOP LEVEL MENU
             // ==========================================
-            layer1Obj = new GameObject("Layer1_SphereSelection");
+            layer1Obj = new GameObject("Layer1_TopMenu");
             layer1Obj.transform.SetParent(canvasObj.transform, false);
             RectTransform l1Rect = layer1Obj.AddComponent<RectTransform>();
             l1Rect.anchorMin = Vector2.zero;
             l1Rect.anchorMax = Vector2.one;
             l1Rect.sizeDelta = Vector2.zero;
 
-            GameObject l1Panel = GlassUIFactory.CreateGlassmorphicPanel(layer1Obj.transform, new Vector2(1440f, 220f), borderNeonColor, new Vector2(0f, -30f));
-            l1Panel.name = "L1_Panel";
+            // 1. PLAY BUTTON (Bottom Left)
+            GameObject playBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(layer1Obj.transform, new Vector2(280f, 120f), borderNeonColor, "PLAY", borderNeonColor, 50, true);
+            playBtnObj.name = "NavBtn_Play";
+            RectTransform playRect = playBtnObj.GetComponent<RectTransform>();
+            playRect.anchorMin = new Vector2(0.05f, 0.08f);
+            playRect.anchorMax = new Vector2(0.05f, 0.08f);
+            playRect.pivot = new Vector2(0f, 0f);
+            playRect.anchoredPosition = Vector2.zero;
+            playBtnObj.GetComponent<Button>().onClick.AddListener(ShowSphereSelection3D);
 
-            // Title Label for Sphere Selection
-            GameObject l1TitleObj = new GameObject("L1_Title");
-            l1TitleObj.transform.SetParent(l1Panel.transform, false);
-            RectTransform l1TitleRect = l1TitleObj.AddComponent<RectTransform>();
-            l1TitleRect.anchorMin = new Vector2(0f, 0.72f);
-            l1TitleRect.anchorMax = new Vector2(1f, 0.98f);
-            l1TitleRect.sizeDelta = Vector2.zero;
+            // 2. SETTINGS BUTTON (Bottom Right)
+            GameObject settingsBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(layer1Obj.transform, new Vector2(280f, 120f), borderNeonColor, "\u2699 SETTINGS", borderNeonColor, 40);
+            settingsBtnObj.name = "NavBtn_Settings";
+            RectTransform settingsRect = settingsBtnObj.GetComponent<RectTransform>();
+            settingsRect.anchorMin = new Vector2(0.95f, 0.08f);
+            settingsRect.anchorMax = new Vector2(0.95f, 0.08f);
+            settingsRect.pivot = new Vector2(1f, 0f);
+            settingsRect.anchoredPosition = Vector2.zero;
+            settingsBtnObj.GetComponent<Button>().onClick.AddListener(OpenSettingsPopup);
 
-            Text l1TitleText = l1TitleObj.AddComponent<Text>();
-            l1TitleText.font = defaultFont;
-            l1TitleText.fontSize = 24;
-            l1TitleText.fontStyle = FontStyle.Bold;
-            l1TitleText.alignment = TextAnchor.MiddleCenter;
-            l1TitleText.color = textGoldColor;
-            l1TitleText.text = "SELECT PLAYER SPHERES";
+            // ==========================================
+            // LAYER 1.5: 3D SPHERE SELECTOR OVERLAY
+            // ==========================================
+            layer15Obj = new GameObject("Layer15_SphereSelector");
+            layer15Obj.transform.SetParent(canvasObj.transform, false);
+            RectTransform l15Rect = layer15Obj.AddComponent<RectTransform>();
+            l15Rect.anchorMin = Vector2.zero;
+            l15Rect.anchorMax = Vector2.one;
+            l15Rect.sizeDelta = Vector2.zero;
 
-            Shadow l1TitleShadow = l1TitleObj.AddComponent<Shadow>();
-            l1TitleShadow.effectColor = new Color(0f, 0f, 0f, 0.85f);
-            l1TitleShadow.effectDistance = new Vector2(2f, -2f);
+            // Left Arrow
+            GameObject prevSphereBtn = GlassUIFactory.CreateGlassmorphicIconButton(layer15Obj.transform, new Vector2(120f, 120f), borderNeonColor, "\u25C0", Color.white, 40);
+            prevSphereBtn.name = "PrevSphereButton";
+            RectTransform pSphereRect = prevSphereBtn.GetComponent<RectTransform>();
+            pSphereRect.anchorMin = new Vector2(0.3f, 0.5f);
+            pSphereRect.anchorMax = new Vector2(0.3f, 0.5f);
+            pSphereRect.pivot = new Vector2(0.5f, 0.5f);
+            prevSphereBtn.GetComponent<Button>().onClick.AddListener(() => ChangeSphereCount(-1));
 
-            // Button Container inside L1 Panel
-            GameObject l1Container = new GameObject("L1_Container");
-            l1Container.transform.SetParent(l1Panel.transform, false);
-            RectTransform l1cRect = l1Container.AddComponent<RectTransform>();
-            l1cRect.anchorMin = new Vector2(0.02f, 0.05f);
-            l1cRect.anchorMax = new Vector2(0.98f, 0.72f);
-            l1cRect.sizeDelta = Vector2.zero;
+            // Right Arrow
+            GameObject nextSphereBtn = GlassUIFactory.CreateGlassmorphicIconButton(layer15Obj.transform, new Vector2(120f, 120f), borderNeonColor, "\u25B6", Color.white, 40);
+            nextSphereBtn.name = "NextSphereButton";
+            RectTransform nSphereRect = nextSphereBtn.GetComponent<RectTransform>();
+            nSphereRect.anchorMin = new Vector2(0.7f, 0.5f);
+            nSphereRect.anchorMax = new Vector2(0.7f, 0.5f);
+            nSphereRect.pivot = new Vector2(0.5f, 0.5f);
+            nextSphereBtn.GetComponent<Button>().onClick.AddListener(() => ChangeSphereCount(1));
 
-            HorizontalLayoutGroup l1Hlg = l1Container.AddComponent<HorizontalLayoutGroup>();
-            l1Hlg.spacing = 18f;
-            l1Hlg.childAlignment = TextAnchor.MiddleCenter;
-            l1Hlg.childControlWidth = false;
-            l1Hlg.childControlHeight = false;
 
-            // 0. Spawn FTUE (Tutorial) Launch Button to the left of the 1-sphere button
-            GameObject ftueBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(l1Container.transform, new Vector2(200f, 130f), textGoldColor, "\u2753", textGoldColor, 36);
-            ftueBtnObj.name = "FTUE_Button";
-            ftueBtnObj.GetComponent<Button>().onClick.AddListener(LaunchFTUELevel);
 
-            // Subtitle Label for FTUE Button
-            GameObject ftueLabelObj = new GameObject("FTUELabel");
-            ftueLabelObj.transform.SetParent(ftueBtnObj.transform, false);
-            RectTransform ftueLabelRect = ftueLabelObj.AddComponent<RectTransform>();
-            ftueLabelRect.anchorMin = new Vector2(0f, 0.05f);
-            ftueLabelRect.anchorMax = new Vector2(1f, 0.35f);
-            ftueLabelRect.sizeDelta = Vector2.zero;
+            // Confirm Button (Bottom Center)
+            GameObject confirmBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(layer15Obj.transform, new Vector2(320f, 100f), neonMagentaColor, "CONFIRM", Color.white, 36, true);
+            confirmBtnObj.name = "ConfirmSphereButton";
+            RectTransform confirmRect = confirmBtnObj.GetComponent<RectTransform>();
+            confirmRect.anchorMin = new Vector2(0.5f, 0.15f);
+            confirmRect.anchorMax = new Vector2(0.5f, 0.15f);
+            confirmRect.pivot = new Vector2(0.5f, 0.5f);
+            confirmBtnObj.GetComponent<Button>().onClick.AddListener(ConfirmSphereCount);
 
-            Text ftueLabelText = ftueLabelObj.AddComponent<Text>();
-            ftueLabelText.font = defaultFont;
-            ftueLabelText.fontSize = 14;
-            ftueLabelText.fontStyle = FontStyle.Bold;
-            ftueLabelText.alignment = TextAnchor.MiddleCenter;
-            ftueLabelText.color = textGoldColor;
-            ftueLabelText.text = "HOW TO PLAY";
+            // Back Button (Bottom Left)
+            GameObject backSelBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(layer15Obj.transform, new Vector2(140f, 60f), neonMagentaColor, "\u25C0", Color.white, 32);
+            backSelBtnObj.name = "BackSelectionButton";
+            RectTransform backSelRect = backSelBtnObj.GetComponent<RectTransform>();
+            backSelRect.anchorMin = new Vector2(0.05f, 0.08f);
+            backSelRect.anchorMax = new Vector2(0.05f, 0.08f);
+            backSelRect.pivot = new Vector2(0f, 0f);
+            backSelBtnObj.GetComponent<Button>().onClick.AddListener(ShowLayer1);
 
-            Shadow ftueLabelShadow = ftueLabelObj.AddComponent<Shadow>();
-            ftueLabelShadow.effectColor = new Color(0f, 0f, 0f, 0.85f);
-            ftueLabelShadow.effectDistance = new Vector2(1.5f, -1.5f);
-
-            // Spawn sphere selection glass buttons (1 to 5)
-            for (int count = 1; count <= 5; count++)
-            {
-                int localCount = count;
-                Color borderCol = (count % 2 == 1) ? borderNeonColor : neonMagentaColor;
-                GameObject btnObj = GlassUIFactory.CreateGlassmorphicIconButton(l1Container.transform, new Vector2(200f, 130f), borderCol, "", Color.clear);
-                btnObj.name = "SphereButton_" + count;
-
-                btnObj.GetComponent<Button>().onClick.AddListener(() => OnSphereCountSelected(localCount));
-
-                // Container holding glowing ball icons
-                GameObject ballsContainer = new GameObject("BallsContainer");
-                ballsContainer.transform.SetParent(btnObj.transform, false);
-                RectTransform bcRect = ballsContainer.AddComponent<RectTransform>();
-                bcRect.anchorMin = new Vector2(0f, 0.35f);
-                bcRect.anchorMax = new Vector2(1f, 0.95f);
-                bcRect.sizeDelta = Vector2.zero;
-
-                HorizontalLayoutGroup hlg = ballsContainer.AddComponent<HorizontalLayoutGroup>();
-                hlg.childAlignment = TextAnchor.MiddleCenter;
-                hlg.spacing = 6f;
-                hlg.childControlWidth = false;
-                hlg.childControlHeight = false;
-
-                for (int i = 0; i < localCount; i++)
-                {
-                    GameObject ballObj = new GameObject("BallIcon");
-                    ballObj.transform.SetParent(ballsContainer.transform, false);
-                    RectTransform bRect = ballObj.AddComponent<RectTransform>();
-                    bRect.sizeDelta = new Vector2(26f, 26f);
-
-                    Image ballImg = ballObj.AddComponent<Image>();
-                    ballImg.sprite = GlassUIFactory.GetCircleSprite();
-                    ballImg.color = sphereColors[i % sphereColors.Length];
-
-                    Outline ballGlow = ballObj.AddComponent<Outline>();
-                    ballGlow.effectColor = new Color(1f, 1f, 1f, 0.7f);
-                    ballGlow.effectDistance = new Vector2(1f, -1f);
-                }
-
-                // Count Subtitle Label
-                GameObject labelObj = new GameObject("SphereLabel");
-                labelObj.transform.SetParent(btnObj.transform, false);
-                RectTransform labelRect = labelObj.AddComponent<RectTransform>();
-                labelRect.anchorMin = new Vector2(0f, 0.05f);
-                labelRect.anchorMax = new Vector2(1f, 0.35f);
-                labelRect.sizeDelta = Vector2.zero;
-
-                Text labelText = labelObj.AddComponent<Text>();
-                labelText.font = defaultFont;
-                labelText.fontSize = 15;
-                labelText.fontStyle = FontStyle.Bold;
-                labelText.alignment = TextAnchor.MiddleCenter;
-                labelText.color = textGoldColor;
-                labelText.text = (localCount == 1) ? "1 SPHERE" : $"{localCount} SPHERES";
-
-                Shadow labelShadow = labelObj.AddComponent<Shadow>();
-                labelShadow.effectColor = new Color(0f, 0f, 0f, 0.85f);
-                labelShadow.effectDistance = new Vector2(1.5f, -1.5f);
-            }
+            layer15Obj.SetActive(false);
 
             // ==========================================
             // LAYER 2: LEVEL SELECTION LAYER
@@ -665,32 +578,104 @@ namespace TubityWAI
 
         private void SetTopLevelMenuVisible(bool visible)
         {
-            if (logoObj != null) logoObj.SetActive(visible);
             if (topMenuObj != null) topMenuObj.SetActive(visible);
-            if (bottomNavObj != null) bottomNavObj.SetActive(visible);
-            if (layer1Obj != null) layer1Obj.SetActive(visible);
+            if (logoObj != null) logoObj.SetActive(visible);
         }
 
         private void ShowLayer1()
         {
+            SetTopLevelMenuVisible(true);
+            if (layer1Obj != null) layer1Obj.SetActive(true);
+            if (layer15Obj != null) layer15Obj.SetActive(false);
             if (layer2Obj != null) layer2Obj.SetActive(false);
             if (layer3Obj != null) layer3Obj.SetActive(false);
             if (layer4Obj != null) layer4Obj.SetActive(false);
             if (settingsPopupObj != null) settingsPopupObj.SetActive(false);
-
-            SetTopLevelMenuVisible(true);
+            
+            // Revert Camera Zoom if active
+            StartCoroutine(LerpCameraToDefault());
+        }
+        
+        private void ShowSphereSelection3D()
+        {
+            SetTopLevelMenuVisible(false);
+            if (layer1Obj != null) layer1Obj.SetActive(false);
+            if (layer15Obj != null) layer15Obj.SetActive(true);
+            if (layer2Obj != null) layer2Obj.SetActive(false);
+            if (layer3Obj != null) layer3Obj.SetActive(false);
+            if (layer4Obj != null) layer4Obj.SetActive(false);
+            if (settingsPopupObj != null) settingsPopupObj.SetActive(false);
+            
+            // Trigger Zoom Camera Animation
+            StartCoroutine(LerpCameraToTarget(new Vector3(0f, -0.5f, 8f), 45f));
+            
+            // Apply sphere count to the morpher
+            AttractionSphereMorpher morpher = FindFirstObjectByType<AttractionSphereMorpher>();
+            if (morpher != null) morpher.SetSphereCount(selectedSphereCount);
         }
 
-        private void OnSphereCountSelected(int spheres)
+        private void ChangeSphereCount(int delta)
         {
-            selectedSphereCount = spheres;
+            selectedSphereCount += delta;
+            if (selectedSphereCount > 5) selectedSphereCount = 1;
+            if (selectedSphereCount < 1) selectedSphereCount = 5;
+            
+            AttractionSphereMorpher morpher = FindFirstObjectByType<AttractionSphereMorpher>();
+            if (morpher != null) morpher.SetSphereCount(selectedSphereCount);
+        }
+
+        private void ConfirmSphereCount()
+        {
+            GameManager.lastSphereCount = selectedSphereCount;
             ShowLayer2();
+        }
+
+        // Camera Lerp Functions
+        private System.Collections.IEnumerator LerpCameraToDefault()
+        {
+            if (Camera.main == null) yield break;
+            
+            Vector3 startPos = Camera.main.transform.position;
+            Vector3 targetPos = new Vector3(0f, 1f, -10f); // default main menu camera pos
+            float startFov = Camera.main.fieldOfView;
+            float targetFov = 60f;
+            
+            float duration = 0.5f;
+            float elapsed = 0f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.SmoothStep(0f, 1f, elapsed / duration);
+                Camera.main.transform.position = Vector3.Lerp(startPos, targetPos, t);
+                Camera.main.fieldOfView = Mathf.Lerp(startFov, targetFov, t);
+                yield return null;
+            }
+        }
+        
+        private System.Collections.IEnumerator LerpCameraToTarget(Vector3 targetPos, float targetFov)
+        {
+            if (Camera.main == null) yield break;
+            
+            Vector3 startPos = Camera.main.transform.position;
+            float startFov = Camera.main.fieldOfView;
+            
+            float duration = 0.6f;
+            float elapsed = 0f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.SmoothStep(0f, 1f, elapsed / duration);
+                Camera.main.transform.position = Vector3.Lerp(startPos, targetPos, t);
+                Camera.main.fieldOfView = Mathf.Lerp(startFov, targetFov, t);
+                yield return null;
+            }
         }
 
         private void ShowLayer2()
         {
             SetTopLevelMenuVisible(false);
-
+            if (layer1Obj != null) layer1Obj.SetActive(false);
+            if (layer15Obj != null) layer15Obj.SetActive(false);
             if (layer2Obj != null) layer2Obj.SetActive(true);
             if (layer3Obj != null) layer3Obj.SetActive(false);
             if (layer4Obj != null) layer4Obj.SetActive(false);
@@ -831,7 +816,7 @@ namespace TubityWAI
 
         private void CreateSettingsPopup()
         {
-            settingsPopupObj = GlassUIFactory.CreateGlassmorphicPanel(canvasObj.transform, new Vector2(520f, 480f), borderNeonColor, Vector2.zero);
+            settingsPopupObj = GlassUIFactory.CreateGlassmorphicPanel(canvasObj.transform, new Vector2(520f, 560f), borderNeonColor, Vector2.zero);
             settingsPopupObj.name = "SettingsPopup";
 
             // Title
@@ -874,12 +859,44 @@ namespace TubityWAI
             bodyShadow.effectColor = new Color(0f, 0f, 0f, 0.85f);
             bodyShadow.effectDistance = new Vector2(1.5f, -1.5f);
 
+            // 0. SHOP BUTTON (Glassmorphic)
+            GameObject shopBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(settingsPopupObj.transform, new Vector2(420f, 55f), textGoldColor, "", Color.clear);
+            shopBtnObj.name = "Settings_ShopButton";
+            RectTransform shopRect = shopBtnObj.GetComponent<RectTransform>();
+            shopRect.anchorMin = new Vector2(0.5f, 0.70f);
+            shopRect.anchorMax = new Vector2(0.5f, 0.70f);
+
+            Button shopBtn = shopBtnObj.GetComponent<Button>();
+            shopBtn.onClick.AddListener(() => {
+                CloseSettingsPopup();
+                ShowShopMenu();
+            });
+
+            GameObject shopTextObj = new GameObject("Text");
+            shopTextObj.transform.SetParent(shopBtnObj.transform, false);
+            RectTransform shopTRect = shopTextObj.AddComponent<RectTransform>();
+            shopTRect.anchorMin = Vector2.zero;
+            shopTRect.anchorMax = Vector2.one;
+            shopTRect.sizeDelta = Vector2.zero;
+
+            Text shopTextVal = shopTextObj.AddComponent<Text>();
+            shopTextVal.font = defaultFont;
+            shopTextVal.fontSize = 20;
+            shopTextVal.fontStyle = FontStyle.Bold;
+            shopTextVal.alignment = TextAnchor.MiddleCenter;
+            shopTextVal.color = textGoldColor;
+            shopTextVal.text = "\uD83D\uDED2 ENTER COSMETICS SHOP"; // Shopping Cart
+
+            Shadow shopShadow = shopTextObj.AddComponent<Shadow>();
+            shopShadow.effectColor = new Color(0f, 0f, 0f, 0.85f);
+            shopShadow.effectDistance = new Vector2(1.5f, -1.5f);
+
             // 1. Remove Ads Button (Glassmorphic)
-            GameObject removeAdsBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(settingsPopupObj.transform, new Vector2(420f, 55f), textGoldColor, "", Color.clear);
+            GameObject removeAdsBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(settingsPopupObj.transform, new Vector2(420f, 55f), borderNeonColor, "", Color.clear);
             removeAdsBtnObj.name = "RemoveAdsButton";
             RectTransform removeAdsRect = removeAdsBtnObj.GetComponent<RectTransform>();
-            removeAdsRect.anchorMin = new Vector2(0.5f, 0.58f);
-            removeAdsRect.anchorMax = new Vector2(0.5f, 0.58f);
+            removeAdsRect.anchorMin = new Vector2(0.5f, 0.55f);
+            removeAdsRect.anchorMax = new Vector2(0.5f, 0.55f);
 
             removeAdsBtn = removeAdsBtnObj.GetComponent<Button>();
             removeAdsBtn.onClick.AddListener(() => {
@@ -917,8 +934,8 @@ namespace TubityWAI
             GameObject restoreBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(settingsPopupObj.transform, new Vector2(420f, 55f), borderNeonColor, "", Color.clear);
             restoreBtnObj.name = "RestoreButton";
             RectTransform restoreRect = restoreBtnObj.GetComponent<RectTransform>();
-            restoreRect.anchorMin = new Vector2(0.5f, 0.42f);
-            restoreRect.anchorMax = new Vector2(0.5f, 0.42f);
+            restoreRect.anchorMin = new Vector2(0.5f, 0.40f);
+            restoreRect.anchorMax = new Vector2(0.5f, 0.40f);
 
             Button restoreBtn = restoreBtnObj.GetComponent<Button>();
             restoreBtn.onClick.AddListener(() => {
@@ -952,8 +969,8 @@ namespace TubityWAI
             GameObject resetDefaultsBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(settingsPopupObj.transform, new Vector2(420f, 55f), neonMagentaColor, "", Color.clear);
             resetDefaultsBtnObj.name = "RestoreDefaultsButton";
             RectTransform resetDefaultsRect = resetDefaultsBtnObj.GetComponent<RectTransform>();
-            resetDefaultsRect.anchorMin = new Vector2(0.5f, 0.26f);
-            resetDefaultsRect.anchorMax = new Vector2(0.5f, 0.26f);
+            resetDefaultsRect.anchorMin = new Vector2(0.5f, 0.25f);
+            resetDefaultsRect.anchorMax = new Vector2(0.5f, 0.25f);
 
             Button resetDefaultsBtn = resetDefaultsBtnObj.GetComponent<Button>();
             resetDefaultsBtn.onClick.AddListener(RestoreDefaultSettings);
@@ -1014,7 +1031,7 @@ namespace TubityWAI
             PlayerPrefs.DeleteKey("AdsRemoved");
             PlayerPrefs.Save();
 
-            selectedSphereCount = 3;
+            selectedSphereCount = 1;
             currentLevelPage = 0;
 
             UpdateSettingsUI();
