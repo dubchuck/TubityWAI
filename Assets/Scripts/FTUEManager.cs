@@ -34,9 +34,6 @@ namespace TubityWAI
         private Image radialFillImage;
         private Text percentText;
 
-        private Sprite circleSprite;
-        private Sprite ringSprite;
-        private Sprite roundedRectSprite;
         private Font defaultFont;
 
         private float lastAngle = 0f;
@@ -59,10 +56,6 @@ namespace TubityWAI
                 Destroy(gameObject);
                 return;
             }
-
-            circleSprite = CreateFilledCircleSprite(128);
-            ringSprite = CreateRingSprite(128, 50f, 62f);
-            roundedRectSprite = CreateRoundedRectSprite(128, 128, 24);
         }
 
         private void OnDestroy()
@@ -114,7 +107,7 @@ namespace TubityWAI
             overlayRect = targetOverlayObj.AddComponent<RectTransform>();
 
             Image overlayBg = targetOverlayObj.AddComponent<Image>();
-            overlayBg.sprite = roundedRectSprite;
+            overlayBg.sprite = GlassUIFactory.GetRoundedRectSprite();
             overlayBg.type = Image.Type.Sliced;
             overlayBg.color = new Color(0f, 0.85f, 1f, 0.15f);
 
@@ -158,7 +151,7 @@ namespace TubityWAI
 
             // Background Glass Panel for Progress Graphic
             Image progressBg = progressContainerObj.AddComponent<Image>();
-            progressBg.sprite = circleSprite;
+            progressBg.sprite = GlassUIFactory.GetCircleSprite();
             progressBg.color = new Color(0.04f, 0.02f, 0.08f, 0.85f);
 
             // Radial Filled Circle Image
@@ -170,7 +163,7 @@ namespace TubityWAI
             fillRect.sizeDelta = Vector2.zero;
 
             radialFillImage = fillObj.AddComponent<Image>();
-            radialFillImage.sprite = circleSprite;
+            radialFillImage.sprite = GlassUIFactory.GetCircleSprite();
             radialFillImage.type = Image.Type.Filled;
             radialFillImage.fillMethod = Image.FillMethod.Radial360;
             radialFillImage.fillOrigin = (int)Image.Origin360.Top;
@@ -187,7 +180,7 @@ namespace TubityWAI
             borderRect.sizeDelta = Vector2.zero;
 
             borderRingImage = borderObj.AddComponent<Image>();
-            borderRingImage.sprite = ringSprite;
+            borderRingImage.sprite = GlassUIFactory.GetRingSprite();
             borderRingImage.color = new Color(1f, 0.85f, 0f, 0.95f);
 
             Outline ringGlow = borderObj.AddComponent<Outline>();
@@ -431,81 +424,6 @@ namespace TubityWAI
             {
                 GameManager.Instance.ReturnToMainMenu();
             }
-        }
-
-        private Sprite CreateFilledCircleSprite(int size = 128)
-        {
-            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
-            Color[] pixels = new Color[size * size];
-            float radius = size * 0.5f;
-
-            for (int y = 0; y < size; y++)
-            {
-                for (int x = 0; x < size; x++)
-                {
-                    float dx = x - radius + 0.5f;
-                    float dy = y - radius + 0.5f;
-                    float dist = Mathf.Sqrt(dx * dx + dy * dy);
-                    float alpha = Mathf.Clamp01(radius - dist);
-                    pixels[y * size + x] = new Color(1f, 1f, 1f, alpha);
-                }
-            }
-
-            tex.SetPixels(pixels);
-            tex.Apply();
-            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
-        }
-
-        private Sprite CreateRingSprite(int size = 128, float innerR = 50f, float outerR = 62f)
-        {
-            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
-            Color[] pixels = new Color[size * size];
-            float center = size * 0.5f;
-
-            for (int y = 0; y < size; y++)
-            {
-                for (int x = 0; x < size; x++)
-                {
-                    float dx = x - center + 0.5f;
-                    float dy = y - center + 0.5f;
-                    float dist = Mathf.Sqrt(dx * dx + dy * dy);
-
-                    float alphaInner = Mathf.Clamp01(dist - innerR);
-                    float alphaOuter = Mathf.Clamp01(outerR - dist);
-                    float alpha = Mathf.Min(alphaInner, alphaOuter);
-
-                    pixels[y * size + x] = new Color(1f, 1f, 1f, alpha);
-                }
-            }
-
-            tex.SetPixels(pixels);
-            tex.Apply();
-            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
-        }
-
-        private Sprite CreateRoundedRectSprite(int width = 128, int height = 128, int cornerRadius = 24)
-        {
-            Texture2D tex = new Texture2D(width, height, TextureFormat.RGBA32, false);
-            Color[] pixels = new Color[width * height];
-
-            float r = cornerRadius;
-            for (int y = 0; y < height; y++)
-            {
-                for (int x = 0; x < width; x++)
-                {
-                    float cx = (x < r) ? r - x : (x > width - 1 - r) ? x - (width - 1 - r) : 0f;
-                    float cy = (y < r) ? r - y : (y > height - 1 - r) ? y - (height - 1 - r) : 0f;
-                    float dist = Mathf.Sqrt(cx * cx + cy * cy);
-
-                    float alpha = Mathf.Clamp01(r - dist + 0.5f);
-                    pixels[y * width + x] = new Color(1f, 1f, 1f, alpha);
-                }
-            }
-
-            tex.SetPixels(pixels);
-            tex.Apply();
-            Vector4 border = new Vector4(r, r, r, r);
-            return Sprite.Create(tex, new Rect(0, 0, width, height), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect, border);
         }
     }
 }

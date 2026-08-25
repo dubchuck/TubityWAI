@@ -252,6 +252,184 @@ platform :ios do
     end
   end
 
+  desc "Create Game Center Achievements on App Store Connect"
+  lane :create_achievements do
+    # Load App Store Connect API Key (implicitly registers key for subsequent actions)
+    app_store_connect_api_key(
+      key_id: ENV["KEY_ID"],
+      issuer_id: ENV["ISSUER_ID"],
+      key_filepath: ENV["KEY_FILEPATH"],
+      in_house: false
+    )
+    
+    bundle_id = ENV["BUNDLE_ID"] || "com.dubchuck.tubityx"
+    config_file = File.expand_path("../scripts/achievements_config.json", File.dirname(__FILE__))
+    
+    unless File.exist?(config_file)
+      UI.user_error!("Achievements config file not found at #{config_file}")
+    end
+
+    achievements_data = JSON.parse(File.read(config_file))["achievements"] || []
+    UI.message("Loaded #{achievements_data.length} achievement definitions from achievements_config.json")
+
+    # Find App
+    apps = Spaceship::ConnectAPI::App.all(filter: { bundleId: bundle_id })
+    if apps.empty?
+      UI.user_error!("App with bundle ID #{bundle_id} not found on App Store Connect.")
+    end
+    app = apps.first
+    app_id = app.id
+    UI.message("Found App ID: #{app_id} for #{bundle_id}")
+    
+    token_text = Spaceship::ConnectAPI.client.token.text
+
+    # REST API Helper within the lane
+    make_request = ->(method, path, body = nil) do
+      uri = URI("https://api.appstoreconnect.apple.com/#{path}")
+      http = Net::HTTP.new(uri.host, uri.port)
+      http.use_ssl = true
+
+      req_class = case method.to_sym
+                  when :get then Net::HTTP::Get
+                  when :post then Net::HTTP::Post
+                  when :patch then Net::HTTP::Patch
+                  else raise "Unsupported HTTP method #{method}"
+                  end
+
+      req = req_class.new(uri)
+      req["Authorization"] = "Bearer #{token_text}"
+      req["Content-Type"] = "application/json"
+      req.body = body.to_json if body
+
+      res = http.request(req)
+      if res.code.to_i >= 400
+        UI.important("ASC API Response #{res.code}: #{res.body}")
+      end
+      JSON.parse(res.body) rescue nil
+    end
+
+    # Step 1: Get or Create Game Center Detail for app
+    UI.message("Fetching Game Center detail for App ID #{app_id}...")
+    gc_detail_res = make_request.call(:get, "v1/apps/#{app_id}/gameCenterDetail")
+    gc_detail_id = nil
+    if gc_detail_res && gc_detail_res["data"]
+      gc_detail_id = gc_detail_res["data"]["id"]
+      UI.success("Found Game Center Detail ID: #{gc_detail_id}")
+    else
+      UI.message("Game Center Detail not found. Creating Game Center Detail...")
+      create_gc_res = make_request.call(:post, "v1/gameCenterDetails", {
+        data: {
+          type: "gameCenterDetails",
+          relationships: {
+            app: {
+              data: {
+                type: "apps",
+                id: app_id
+              }
+            }
+          }
+        }
+      })
+      if create_gc_res && create_gc_res["data"]
+        gc_detail_id = create_gc_res["data"]["id"]
+        UI.success("Created Game Center Detail ID: #{gc_detail_id}")
+      else
+        UI.user_error!("Failed to create Game Center Detail. Response: #{create_gc_res.inspect}")
+      end
+    end
+
+    # Step 2: Fetch existing Game Center Achievements
+    UI.message("Checking existing Game Center achievements...")
+    existing_achievements_res = make_request.call(:get, "v1/gameCenterDetails/#{gc_detail_id}/gameCenterAchievements")
+    existing_list = existing_achievements_res && existing_achievements_res["data"] ? existing_achievements_res["data"] : []
+
+    achievements_data.each do |ach|
+      vendor_id = ach["apple_vendor_id"] || "#{bundle_id}.#{ach['id']}"
+      ref_name = ach["reference_name"] || ach["title"]
+      points = ach["points"] || 10
+      hidden = ach["hidden"] ? false : true
+
+      existing_ach = existing_list.find { |item| item["attributes"] && item["attributes"]["vendorIdentifier"] == vendor_id }
+      achievement_id = nil
+
+      if existing_ach
+        achievement_id = existing_ach["id"]
+        UI.success("Achievement '#{vendor_id}' already exists (ID: #{achievement_id}).")
+      else
+        UI.message("Creating Achievement '#{vendor_id}' (#{ref_name})...")
+        payload = {
+          data: {
+            type: "gameCenterAchievements",
+            attributes: {
+              referenceName: ref_name,
+              vendorIdentifier: vendor_id,
+              points: points,
+              showBeforeEarned: hidden,
+              repeatable: false
+            },
+            relationships: {
+              gameCenterDetail: {
+                data: {
+                  type: "gameCenterDetails",
+                  id: gc_detail_id
+                }
+              }
+            }
+          }
+        }
+        create_res = make_request.call(:post, "v1/gameCenterAchievements", payload)
+        if create_res && create_res["data"]
+          achievement_id = create_res["data"]["id"]
+          UI.success("Created Achievement '#{vendor_id}' (ID: #{achievement_id})")
+        else
+          UI.important("Failed to create achievement '#{vendor_id}'. Response: #{create_res.inspect}")
+          next
+        end
+      end
+
+      # Step 3: Check/Create Localizations for achievement
+      if achievement_id
+        UI.message("Checking localizations for achievement ID #{achievement_id}...")
+        locs_res = make_request.call(:get, "v1/gameCenterAchievements/#{achievement_id}/localizations")
+        loc_list = locs_res && locs_res["data"] ? locs_res["data"] : []
+        has_en = loc_list.any? { |l| l["attributes"] && l["attributes"]["locale"] == "en-US" }
+
+        if has_en
+          UI.success("en-US localization already exists for '#{vendor_id}'.")
+        else
+          UI.message("Creating en-US localization for '#{vendor_id}'...")
+          loc_payload = {
+            data: {
+              type: "gameCenterAchievementLocalizations",
+              attributes: {
+                locale: "en-US",
+                name: ach["title"],
+                beforeEarnedDescription: ach["description_locked"],
+                afterEarnedDescription: ach["description_unlocked"]
+              },
+              relationships: {
+                gameCenterAchievement: {
+                  data: {
+                    type: "gameCenterAchievements",
+                    id: achievement_id
+                  }
+                }
+              }
+            }
+          }
+          loc_res = make_request.call(:post, "v1/gameCenterAchievementLocalizations", loc_payload)
+          if loc_res && loc_res["data"]
+            UI.success("Created localization for '#{vendor_id}'.")
+          else
+            UI.important("Failed to create localization for '#{vendor_id}'. Response: #{loc_res.inspect}")
+          end
+        end
+      end
+    end
+
+    UI.success("All Game Center achievements processed successfully!")
+  end
+
   desc "Build and sign the App Store IPA using manual cert/sigh"
   lane :build_ipa do
     # Load App Store Connect API Key (implicitly registers key for subsequent actions)
@@ -383,6 +561,102 @@ platform :ios do
       ipa: "Build-iOS/build/Unity-iPhone.ipa"
     )
   end
+
+  desc "Build and sign the tvOS IPA using gym"
+  lane :build_tvos_ipa do
+    app_store_connect_api_key(
+      key_id: ENV["KEY_ID"],
+      issuer_id: ENV["ISSUER_ID"],
+      key_filepath: ENV["KEY_FILEPATH"],
+      in_house: false
+    )
+    
+    cert(development: false)
+    sigh(app_identifier: ENV["BUNDLE_ID"], platform: "tvos", development: false, force: true)
+    
+    project_path = File.expand_path("../Build-tvOS/Unity-iPhone.xcodeproj", File.dirname(__FILE__))
+    workspace_path = File.expand_path("../Build-tvOS/Unity-iPhone.xcworkspace", File.dirname(__FILE__))
+    output_dir = File.expand_path("../Build-tvOS/build", File.dirname(__FILE__))
+
+    unless File.exist?(project_path)
+      UI.user_error!("tvOS Xcode project not found at #{project_path}. Run 15_unity_tvos_export.sh first.")
+    end
+
+    team_id = (ENV["TEAM_ID"].nil? || ENV["TEAM_ID"].empty?) ? "8W7DKFU852" : ENV["TEAM_ID"]
+
+    update_code_signing_settings(
+      use_automatic_signing: false,
+      path: project_path,
+      team_id: team_id,
+      targets: ["Unity-iPhone"],
+      profile_name: Actions.lane_context[SharedValues::SIGH_NAME],
+      code_sign_identity: "Apple Distribution"
+    )
+
+    update_code_signing_settings(
+      use_automatic_signing: false,
+      path: project_path,
+      team_id: team_id,
+      targets: ["UnityFramework"],
+      code_sign_identity: "Apple Distribution"
+    )
+    
+    gym_args = {
+      scheme: "Unity-iPhone",
+      xcargs: "DEVELOPMENT_TEAM=#{team_id}",
+      output_directory: output_dir,
+      output_name: "TubityX-tvOS.ipa",
+      export_method: "app-store",
+      export_options: {
+        provisioningProfiles: {
+          ENV["BUNDLE_ID"] => Actions.lane_context[SharedValues::SIGH_NAME]
+        }
+      },
+      clean: true
+    }
+
+    if File.exist?(workspace_path)
+      gym_args[:workspace] = workspace_path
+    else
+      gym_args[:project] = project_path
+    end
+
+    gym(gym_args)
+  end
+
+  desc "Upload tvOS build to TestFlight"
+  lane :upload_tvos_to_testflight do
+    app_store_connect_api_key(
+      key_id: ENV["KEY_ID"],
+      issuer_id: ENV["ISSUER_ID"],
+      key_filepath: ENV["KEY_FILEPATH"],
+      in_house: false
+    )
+    
+    ipa_file = File.expand_path("../Build-tvOS/build/TubityX-tvOS.ipa", File.dirname(__FILE__))
+    unless File.exist?(ipa_file)
+      UI.user_error!("tvOS IPA file not found at #{ipa_file}. Run 16_build_tvos_ipa.sh first.")
+    end
+
+    UI.message("Uploading tvOS package '#{ipa_file}' to App Store Connect...")
+    pilot(
+      ipa: ipa_file,
+      app_platform: "appletvos",
+      skip_waiting_for_build_processing: true
+    )
+
+    UI.message("Uploading tvOS metadata & screenshots to App Store Connect...")
+    deliver(
+      platform: "appletvos",
+      app_identifier: ENV["BUNDLE_ID"],
+      screenshots_path: File.expand_path("screenshots/tvos", File.dirname(__FILE__)),
+      skip_binary_upload: true,
+      overwrite_screenshots: true,
+      precheck_include_in_app_purchases: false,
+      run_precheck_before_submit: false,
+      force: true
+    )
+  end
 end
 
 platform :android do
@@ -396,6 +670,42 @@ platform :android do
       skip_upload_metadata: true,
       skip_upload_images: true,
       skip_upload_screenshots: true
+    )
+  end
+end
+
+platform :mac do
+  desc "Upload macOS .pkg installer package to App Store Connect / TestFlight"
+  lane :upload_mac_to_app_store do
+    app_store_connect_api_key(
+      key_id: ENV["KEY_ID"],
+      issuer_id: ENV["ISSUER_ID"],
+      key_filepath: ENV["KEY_FILEPATH"],
+      in_house: false
+    )
+    
+    pkg_file = File.expand_path("../Build-macOS/TubityX.pkg", File.dirname(__FILE__))
+    unless File.exist?(pkg_file)
+      UI.user_error!("macOS .pkg file not found at #{pkg_file}. Run 13_build_mac_pkg.sh first.")
+    end
+
+    UI.message("Uploading macOS package '#{pkg_file}' to App Store Connect...")
+    pilot(
+      pkg: pkg_file,
+      app_platform: "osx",
+      skip_waiting_for_build_processing: true
+    )
+
+    UI.message("Uploading macOS metadata & screenshots to App Store Connect...")
+    deliver(
+      platform: "osx",
+      app_identifier: ENV["BUNDLE_ID"],
+      screenshots_path: File.expand_path("screenshots/mac", File.dirname(__FILE__)),
+      skip_binary_upload: true,
+      overwrite_screenshots: true,
+      precheck_include_in_app_purchases: false,
+      run_precheck_before_submit: false,
+      force: true
     )
   end
 end

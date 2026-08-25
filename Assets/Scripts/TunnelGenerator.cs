@@ -23,6 +23,8 @@ namespace TubityWAI
         public Material tunnelMaterial;
         public Material markerMaterial;
         public Material[] coinMaterials;
+        public Material powerupMaterial;
+        public Material magnetMaterial;
         public Material obstacleMaterial;
         public Material[] transparentObstacleMaterials;
         public float obstacleSpawnProbability = 0.45f;
@@ -108,6 +110,8 @@ namespace TubityWAI
             segment.tunnelMaterial = tunnelMaterial;
             segment.markerMaterial = markerMaterial;
             segment.coinMaterials = coinMaterials;
+            segment.powerupMaterial = powerupMaterial;
+            segment.magnetMaterial = magnetMaterial;
             segment.obstacleMaterial = obstacleMaterial;
             segment.transparentObstacleMaterials = transparentObstacleMaterials;
             segment.obstacleSpawnProbability = obstacleSpawnProbability;

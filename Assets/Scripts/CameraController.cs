@@ -17,6 +17,17 @@ namespace TubityWAI
         [Tooltip("Speed when in attraction mode (no target).")]
         public float attractionSpeed = 7.5f;
 
+        [Header("Powerup Settings")]
+        public float defaultFOV = 60f;
+        public float invincibilityFOV = 90f;
+
+        private Camera cam;
+
+        private void Awake()
+        {
+            cam = GetComponent<Camera>();
+        }
+
         private void LateUpdate()
         {
             if (target == null)
@@ -77,6 +88,13 @@ namespace TubityWAI
 
             // Apply camera rotation (default to identity if rotX and rotY are 0)
             transform.rotation = Quaternion.Euler(rotX, rotY + dynamicRotY, 0f);
+
+            // Apply Powerup FOV Zoom Effect
+            if (cam != null)
+            {
+                float targetFOV = Mathf.Lerp(defaultFOV, invincibilityFOV, target.InvincibilityEffectStrength);
+                cam.fieldOfView = Mathf.Lerp(cam.fieldOfView, targetFOV, Time.deltaTime * 8f);
+            }
         }
     }
 }

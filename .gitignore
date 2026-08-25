@@ -42,6 +42,8 @@ sysinfo.txt
 crashlytics-build.properties
 Build-iOS
 Build-Android
+Build-macOS
+Build-tvOS
 .utmp
 5P4X5YWFH4.cer
 AppStore_com.dubchuck.tubityx.mobileprovision
@@ -54,3 +56,13 @@ tubityx-release.keystore
 scripts/build_config.sh
 scripts/temp_key.p8
 google_play_credentials.json
+*.certSigningRequest
+*.key
+
+Build-MacOS
+mac_installer.cer
+AppStore_com.dubchuck.tubityx_tvos.mobileprovision
+admob_credentials.json
+
+Build-tvOS
+build*

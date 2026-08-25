@@ -27,8 +27,6 @@ namespace TubityWAI
         private List<LevelConfig> levelConfigs = new List<LevelConfig>();
         private int selectedSphereCount = 3; // Default selection
         private int currentLevelPage = 0;   // 0 = Levels 1-6, 1 = Levels 7-12
-        private Sprite circleSprite;
-        private Sprite roundedRectSprite;
         private Font defaultFont;
 
         // UI Layer Containers
@@ -48,6 +46,33 @@ namespace TubityWAI
         private GameObject layer3Obj;
         private Text testLevelIndicatorText;
         private List<GameObject> testLevelButtons = new List<GameObject>();
+
+        // Shop Fields
+        private GameObject layer4Obj;
+        private Text shopTotalCoinsText;
+        private List<GameObject> shopButtons = new List<GameObject>();
+        private int currentShopPage = 0;
+
+        private struct SkinItem
+        {
+            public string Name;
+            public int Price;
+            public string Icon;
+        }
+
+        private SkinItem[] shopSkins = new SkinItem[]
+        {
+            new SkinItem { Name = "DEFAULT GRID", Price = 0, Icon = "▦" },
+            new SkinItem { Name = "SOLID CORE", Price = 100, Icon = "⭕" },
+            new SkinItem { Name = "STRIPES", Price = 200, Icon = "▤" },
+            new SkinItem { Name = "CHECKER", Price = 350, Icon = "▨" },
+            new SkinItem { Name = "CIRCUIT", Price = 500, Icon = "⎉" },
+            new SkinItem { Name = "HEXAGON", Price = 750, Icon = "⬢" },
+            new SkinItem { Name = "PLASMA FX", Price = 1000, Icon = "✦" },
+            new SkinItem { Name = "WARP FX", Price = 1500, Icon = "✧" },
+            new SkinItem { Name = "GAUNTLET FX", Price = 2000, Icon = "✶" },
+            new SkinItem { Name = "CITY FX", Price = 3000, Icon = "🏢" }
+        };
 
         private GameObject logoObj;
         private GameObject bottomNavObj;
@@ -80,8 +105,6 @@ namespace TubityWAI
 
         private void Awake()
         {
-            circleSprite = CreateCircleSprite();
-            roundedRectSprite = CreateRoundedRectSprite(128, 128, 24);
             InitializeLevelConfigurations();
             InitializeTestLevelConfigurations();
         }
@@ -237,15 +260,20 @@ namespace TubityWAI
             navHlg.childControlHeight = false;
 
             // 1. PLAY BUTTON (Double Right Arrow Icon in Neon Cyan Rim)
-            GameObject playBtnObj = CreateGlassmorphicIconButton(bottomNavObj.transform, new Vector2(250f, 120f), borderNeonColor, "\u25B6\u25B6", borderNeonColor, 60);
+            GameObject playBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(bottomNavObj.transform, new Vector2(250f, 120f), borderNeonColor, "\u25B6\u25B6", borderNeonColor, 60, true);
             playBtnObj.name = "NavBtn_Play";
             playBtnObj.GetComponent<Button>().onClick.AddListener(() => {
                 LevelConfig firstLvl = (levelConfigs.Count > 0) ? levelConfigs[0] : null;
                 if (firstLvl != null) LaunchGame(firstLvl);
             });
 
-            // 2. SETTINGS BUTTON (Gear Icon in Neon Cyan Rim)
-            GameObject settingsBtnObj = CreateGlassmorphicIconButton(bottomNavObj.transform, new Vector2(180f, 120f), borderNeonColor, "\u2699", borderNeonColor, 56);
+            // 2. SHOP BUTTON (Cart/Shop Icon in Neon Gold Rim)
+            GameObject shopBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(bottomNavObj.transform, new Vector2(180f, 120f), textGoldColor, "\uD83D\uDED2", textGoldColor, 50); // Shopping cart emoji
+            shopBtnObj.name = "NavBtn_Shop";
+            shopBtnObj.GetComponent<Button>().onClick.AddListener(ShowShopMenu);
+
+            // 3. SETTINGS BUTTON (Gear Icon in Neon Cyan Rim)
+            GameObject settingsBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(bottomNavObj.transform, new Vector2(180f, 120f), borderNeonColor, "\u2699", borderNeonColor, 56);
             settingsBtnObj.name = "NavBtn_Settings";
             settingsBtnObj.GetComponent<Button>().onClick.AddListener(OpenSettingsPopup);
 
@@ -259,7 +287,7 @@ namespace TubityWAI
             l1Rect.anchorMax = Vector2.one;
             l1Rect.sizeDelta = Vector2.zero;
 
-            GameObject l1Panel = CreateGlassmorphicPanel(layer1Obj.transform, new Vector2(1440f, 220f), borderNeonColor, new Vector2(0f, -30f));
+            GameObject l1Panel = GlassUIFactory.CreateGlassmorphicPanel(layer1Obj.transform, new Vector2(1440f, 220f), borderNeonColor, new Vector2(0f, -30f));
             l1Panel.name = "L1_Panel";
 
             // Title Label for Sphere Selection
@@ -297,7 +325,7 @@ namespace TubityWAI
             l1Hlg.childControlHeight = false;
 
             // 0. Spawn FTUE (Tutorial) Launch Button to the left of the 1-sphere button
-            GameObject ftueBtnObj = CreateGlassmorphicIconButton(l1Container.transform, new Vector2(200f, 130f), textGoldColor, "\u2753", textGoldColor, 36);
+            GameObject ftueBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(l1Container.transform, new Vector2(200f, 130f), textGoldColor, "\u2753", textGoldColor, 36);
             ftueBtnObj.name = "FTUE_Button";
             ftueBtnObj.GetComponent<Button>().onClick.AddListener(LaunchFTUELevel);
 
@@ -326,7 +354,7 @@ namespace TubityWAI
             {
                 int localCount = count;
                 Color borderCol = (count % 2 == 1) ? borderNeonColor : neonMagentaColor;
-                GameObject btnObj = CreateGlassmorphicIconButton(l1Container.transform, new Vector2(200f, 130f), borderCol, "", Color.clear);
+                GameObject btnObj = GlassUIFactory.CreateGlassmorphicIconButton(l1Container.transform, new Vector2(200f, 130f), borderCol, "", Color.clear);
                 btnObj.name = "SphereButton_" + count;
 
                 btnObj.GetComponent<Button>().onClick.AddListener(() => OnSphereCountSelected(localCount));
@@ -353,7 +381,7 @@ namespace TubityWAI
                     bRect.sizeDelta = new Vector2(26f, 26f);
 
                     Image ballImg = ballObj.AddComponent<Image>();
-                    ballImg.sprite = circleSprite;
+                    ballImg.sprite = GlassUIFactory.GetCircleSprite();
                     ballImg.color = sphereColors[i % sphereColors.Length];
 
                     Outline ballGlow = ballObj.AddComponent<Outline>();
@@ -392,7 +420,7 @@ namespace TubityWAI
             l2Rect.anchorMax = Vector2.one;
             l2Rect.sizeDelta = Vector2.zero;
 
-            GameObject l2Panel = CreateGlassmorphicPanel(layer2Obj.transform, new Vector2(1240f, 640f), borderNeonColor, new Vector2(0f, 40f));
+            GameObject l2Panel = GlassUIFactory.CreateGlassmorphicPanel(layer2Obj.transform, new Vector2(1240f, 640f), borderNeonColor, new Vector2(0f, 40f));
             l2Panel.name = "L2_Panel";
 
             // Title indicator text
@@ -431,7 +459,7 @@ namespace TubityWAI
             for (int i = 0; i < 6; i++)
             {
                 Color bCol = (i % 2 == 0) ? borderNeonColor : neonMagentaColor;
-                GameObject lvlBtnObj = CreateGlassmorphicIconButton(l2GridObj.transform, new Vector2(290f, 135f), bCol, "", Color.clear);
+                GameObject lvlBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(l2GridObj.transform, new Vector2(290f, 135f), bCol, "", Color.clear);
                 lvlBtnObj.name = "LevelButton_" + i;
 
                 // Level Number
@@ -476,7 +504,7 @@ namespace TubityWAI
             }
 
             // Back Button (Bottom Left)
-            GameObject backBtnObj = CreateGlassmorphicIconButton(l2Panel.transform, new Vector2(140f, 60f), neonMagentaColor, "\u25C0", Color.white, 32);
+            GameObject backBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(l2Panel.transform, new Vector2(140f, 60f), neonMagentaColor, "\u25C0", Color.white, 32);
             backBtnObj.name = "BackButton";
             RectTransform backRect = backBtnObj.GetComponent<RectTransform>();
             backRect.anchorMin = new Vector2(0.08f, 0.08f);
@@ -485,7 +513,7 @@ namespace TubityWAI
             backBtnObj.GetComponent<Button>().onClick.AddListener(ShowLayer1);
 
             // Previous Page Button (\u25C0)
-            GameObject prevBtnObj = CreateGlassmorphicIconButton(l2Panel.transform, new Vector2(120f, 60f), borderNeonColor, "\u25C0", Color.white, 32);
+            GameObject prevBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(l2Panel.transform, new Vector2(120f, 60f), borderNeonColor, "\u25C0", Color.white, 32);
             prevBtnObj.name = "PrevButton";
             RectTransform prevRect = prevBtnObj.GetComponent<RectTransform>();
             prevRect.anchorMin = new Vector2(0.82f, 0.08f);
@@ -493,7 +521,7 @@ namespace TubityWAI
             prevBtnObj.GetComponent<Button>().onClick.AddListener(() => ChangePage(-1));
 
             // Next Page Button (\u25B6)
-            GameObject nextBtnObj = CreateGlassmorphicIconButton(l2Panel.transform, new Vector2(120f, 60f), borderNeonColor, "\u25B6", Color.white, 32);
+            GameObject nextBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(l2Panel.transform, new Vector2(120f, 60f), borderNeonColor, "\u25B6", Color.white, 32);
             nextBtnObj.name = "NextButton";
             RectTransform nextRect = nextBtnObj.GetComponent<RectTransform>();
             nextRect.anchorMin = new Vector2(0.94f, 0.08f);
@@ -516,13 +544,13 @@ namespace TubityWAI
             tmHlg.childAlignment = TextAnchor.MiddleCenter;
 
             // Campaign Tab Button
-            GameObject campBtnObj = CreateGlassmorphicIconButton(topMenuObj.transform, new Vector2(350f, 55f), borderNeonColor, "CAMPAIGN", Color.white, 20);
+            GameObject campBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(topMenuObj.transform, new Vector2(350f, 55f), borderNeonColor, "CAMPAIGN", Color.white, 20);
             campaignTabImg = campBtnObj.GetComponent<Image>();
             campaignTabBorder = campBtnObj.GetComponent<Outline>();
             campBtnObj.GetComponent<Button>().onClick.AddListener(ShowCampaign);
 
             // Test Levels Tab Button
-            GameObject testBtnObj = CreateGlassmorphicIconButton(topMenuObj.transform, new Vector2(350f, 55f), neonMagentaColor, "TEST LEVELS", Color.white, 20);
+            GameObject testBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(topMenuObj.transform, new Vector2(350f, 55f), neonMagentaColor, "TEST LEVELS", Color.white, 20);
             testTabImg = testBtnObj.GetComponent<Image>();
             testTabBorder = testBtnObj.GetComponent<Outline>();
             testBtnObj.GetComponent<Button>().onClick.AddListener(ShowTestLevels);
@@ -537,7 +565,7 @@ namespace TubityWAI
             l3Rect.anchorMax = Vector2.one;
             l3Rect.sizeDelta = Vector2.zero;
 
-            GameObject l3Panel = CreateGlassmorphicPanel(layer3Obj.transform, new Vector2(1240f, 640f), borderNeonColor, new Vector2(0f, 40f));
+            GameObject l3Panel = GlassUIFactory.CreateGlassmorphicPanel(layer3Obj.transform, new Vector2(1240f, 640f), borderNeonColor, new Vector2(0f, 40f));
             l3Panel.name = "L3_Panel";
 
             // Indicator
@@ -576,7 +604,7 @@ namespace TubityWAI
             for (int i = 0; i < 6; i++)
             {
                 Color bCol = (i % 2 == 0) ? borderNeonColor : neonMagentaColor;
-                GameObject lvlBtnObj = CreateGlassmorphicIconButton(l3GridObj.transform, new Vector2(290f, 135f), bCol, "", Color.clear);
+                GameObject lvlBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(l3GridObj.transform, new Vector2(290f, 135f), bCol, "", Color.clear);
                 lvlBtnObj.name = "TestLevelButton_" + i;
 
                 // Level Number
@@ -621,7 +649,7 @@ namespace TubityWAI
             }
 
             // Back Button (\u25C0)
-            GameObject l3BackBtnObj = CreateGlassmorphicIconButton(l3Panel.transform, new Vector2(140f, 60f), neonMagentaColor, "\u25C0", Color.white, 32);
+            GameObject l3BackBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(l3Panel.transform, new Vector2(140f, 60f), neonMagentaColor, "\u25C0", Color.white, 32);
             l3BackBtnObj.name = "L3BackButton";
             RectTransform l3BackRect = l3BackBtnObj.GetComponent<RectTransform>();
             l3BackRect.anchorMin = new Vector2(0.08f, 0.08f);
@@ -630,172 +658,10 @@ namespace TubityWAI
             l3BackBtnObj.GetComponent<Button>().onClick.AddListener(ShowCampaign);
 
             layer3Obj.SetActive(false);
+
+            CreateShopUI();
         }
 
-        private GameObject CreateGlassmorphicPanel(Transform parent, Vector2 size, Color neonBorderColor, Vector2 anchoredPosition)
-        {
-            GameObject panelObj = new GameObject("GlassPanel");
-            panelObj.transform.SetParent(parent, false);
-            RectTransform rect = panelObj.AddComponent<RectTransform>();
-            rect.anchorMin = new Vector2(0.5f, 0.5f);
-            rect.anchorMax = new Vector2(0.5f, 0.5f);
-            rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.sizeDelta = size;
-            rect.anchoredPosition = anchoredPosition;
-
-            // Layer 1: Base Glass Fill
-            Image bgImg = panelObj.AddComponent<Image>();
-            bgImg.sprite = roundedRectSprite;
-            bgImg.type = Image.Type.Sliced;
-            bgImg.color = panelBackgroundColor;
-
-            // Layer 2: Neon Rim
-            Outline rim = panelObj.AddComponent<Outline>();
-            rim.effectColor = neonBorderColor;
-            rim.effectDistance = new Vector2(2.5f, -2.5f);
-
-            // Layer 3: Ambient Glow
-            Shadow glowShadow = panelObj.AddComponent<Shadow>();
-            glowShadow.effectColor = new Color(neonBorderColor.r, neonBorderColor.g, neonBorderColor.b, 0.45f);
-            glowShadow.effectDistance = new Vector2(-2f, 2f);
-
-            // Layer 4: Specular Highlight Overlay (Top gradient reflection)
-            GameObject highlight = new GameObject("GlassHighlight");
-            highlight.transform.SetParent(panelObj.transform, false);
-            RectTransform hlRect = highlight.AddComponent<RectTransform>();
-            hlRect.anchorMin = new Vector2(0.01f, 0.55f);
-            hlRect.anchorMax = new Vector2(0.99f, 0.98f);
-            hlRect.sizeDelta = Vector2.zero;
-
-            Image hlImg = highlight.AddComponent<Image>();
-            hlImg.sprite = roundedRectSprite;
-            hlImg.type = Image.Type.Sliced;
-            hlImg.color = new Color(1f, 1f, 1f, 0.18f);
-
-            return panelObj;
-        }
-
-        private GameObject CreateGlassmorphicIconButton(Transform parent, Vector2 size, Color neonBorderColor, string iconUnicode, Color iconColor, int fontSize = 56)
-        {
-            GameObject btnObj = new GameObject("GlassIconButton");
-            btnObj.transform.SetParent(parent, false);
-            RectTransform rect = btnObj.AddComponent<RectTransform>();
-            rect.sizeDelta = size;
-
-            // Layer 1: Base Glass Fill
-            Image bgImg = btnObj.AddComponent<Image>();
-            bgImg.sprite = roundedRectSprite;
-            bgImg.type = Image.Type.Sliced;
-            bgImg.color = new Color(0.04f, 0.08f, 0.20f, 0.85f); // Deep translucent glass
-
-            // Layer 2: Neon Rim
-            Outline rim = btnObj.AddComponent<Outline>();
-            rim.effectColor = neonBorderColor;
-            rim.effectDistance = new Vector2(2.5f, -2.5f);
-
-            // Layer 3: Ambient Glow
-            Shadow glowShadow = btnObj.AddComponent<Shadow>();
-            glowShadow.effectColor = new Color(neonBorderColor.r, neonBorderColor.g, neonBorderColor.b, 0.45f);
-            glowShadow.effectDistance = new Vector2(-2f, 2f);
-
-            // Layer 4: Specular Highlight Overlay (Top 42% height reflection)
-            GameObject highlight = new GameObject("GlassHighlight");
-            highlight.transform.SetParent(btnObj.transform, false);
-            RectTransform hlRect = highlight.AddComponent<RectTransform>();
-            hlRect.anchorMin = new Vector2(0.02f, 0.50f);
-            hlRect.anchorMax = new Vector2(0.98f, 0.96f);
-            hlRect.sizeDelta = Vector2.zero;
-
-            Image hlImg = highlight.AddComponent<Image>();
-            hlImg.sprite = roundedRectSprite;
-            hlImg.type = Image.Type.Sliced;
-            hlImg.color = new Color(1f, 1f, 1f, 0.18f);
-
-            // Layer 5: Icon / Text Content
-            if (!string.IsNullOrEmpty(iconUnicode))
-            {
-                GameObject iconObj = new GameObject("Icon");
-                iconObj.transform.SetParent(btnObj.transform, false);
-                RectTransform iconRect = iconObj.AddComponent<RectTransform>();
-                iconRect.anchorMin = Vector2.zero;
-                iconRect.anchorMax = Vector2.one;
-                iconRect.sizeDelta = Vector2.zero;
-
-                Text iconText = iconObj.AddComponent<Text>();
-                iconText.font = defaultFont;
-                iconText.fontSize = fontSize;
-                iconText.fontStyle = FontStyle.Bold;
-                iconText.alignment = TextAnchor.MiddleCenter;
-                iconText.color = iconColor;
-                iconText.text = iconUnicode;
-
-                Shadow iconShadow = iconObj.AddComponent<Shadow>();
-                iconShadow.effectColor = new Color(0f, 0f, 0f, 0.85f);
-                iconShadow.effectDistance = new Vector2(2f, -2f);
-            }
-
-            Button btn = btnObj.AddComponent<Button>();
-            btn.targetGraphic = bgImg;
-
-            ColorBlock cb = btn.colors;
-            cb.normalColor = Color.white;
-            cb.highlightedColor = new Color(1.35f, 1.35f, 1.45f, 1f);
-            cb.pressedColor = new Color(0.7f, 0.7f, 0.8f, 1f);
-            cb.selectedColor = Color.white;
-            cb.fadeDuration = 0.1f;
-            btn.colors = cb;
-
-            return btnObj;
-        }
-
-        private Sprite CreateCircleSprite()
-        {
-            int size = 32;
-            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
-            Color[] pixels = new Color[size * size];
-            float radius = size * 0.5f;
-
-            for (int y = 0; y < size; y++)
-            {
-                for (int x = 0; x < size; x++)
-                {
-                    float dx = x - radius + 0.5f;
-                    float dy = y - radius + 0.5f;
-                    float dist = Mathf.Sqrt(dx * dx + dy * dy);
-                    float alpha = Mathf.Clamp01(radius - dist);
-                    pixels[y * size + x] = new Color(1f, 1f, 1f, alpha);
-                }
-            }
-
-            tex.SetPixels(pixels);
-            tex.Apply();
-            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
-        }
-
-        private Sprite CreateRoundedRectSprite(int width = 128, int height = 128, int cornerRadius = 24)
-        {
-            Texture2D tex = new Texture2D(width, height, TextureFormat.RGBA32, false);
-            Color[] pixels = new Color[width * height];
-
-            float r = cornerRadius;
-            for (int y = 0; y < height; y++)
-            {
-                for (int x = 0; x < width; x++)
-                {
-                    float cx = (x < r) ? r - x : (x > width - 1 - r) ? x - (width - 1 - r) : 0f;
-                    float cy = (y < r) ? r - y : (y > height - 1 - r) ? y - (height - 1 - r) : 0f;
-                    float dist = Mathf.Sqrt(cx * cx + cy * cy);
-
-                    float alpha = Mathf.Clamp01(r - dist + 0.5f);
-                    pixels[y * width + x] = new Color(1f, 1f, 1f, alpha);
-                }
-            }
-
-            tex.SetPixels(pixels);
-            tex.Apply();
-            Vector4 border = new Vector4(r, r, r, r);
-            return Sprite.Create(tex, new Rect(0, 0, width, height), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect, border);
-        }
 
         private void SetTopLevelMenuVisible(bool visible)
         {
@@ -809,6 +675,7 @@ namespace TubityWAI
         {
             if (layer2Obj != null) layer2Obj.SetActive(false);
             if (layer3Obj != null) layer3Obj.SetActive(false);
+            if (layer4Obj != null) layer4Obj.SetActive(false);
             if (settingsPopupObj != null) settingsPopupObj.SetActive(false);
 
             SetTopLevelMenuVisible(true);
@@ -826,6 +693,7 @@ namespace TubityWAI
 
             if (layer2Obj != null) layer2Obj.SetActive(true);
             if (layer3Obj != null) layer3Obj.SetActive(false);
+            if (layer4Obj != null) layer4Obj.SetActive(false);
             if (settingsPopupObj != null) settingsPopupObj.SetActive(false);
 
             if (sphereIndicatorText != null)
@@ -898,6 +766,7 @@ namespace TubityWAI
 
             if (layer2Obj != null) layer2Obj.SetActive(false);
             if (layer3Obj != null) layer3Obj.SetActive(true);
+            if (layer4Obj != null) layer4Obj.SetActive(false);
             if (settingsPopupObj != null) settingsPopupObj.SetActive(false);
 
             RefreshTestLevelGrid();
@@ -962,7 +831,7 @@ namespace TubityWAI
 
         private void CreateSettingsPopup()
         {
-            settingsPopupObj = CreateGlassmorphicPanel(canvasObj.transform, new Vector2(520f, 480f), borderNeonColor, Vector2.zero);
+            settingsPopupObj = GlassUIFactory.CreateGlassmorphicPanel(canvasObj.transform, new Vector2(520f, 480f), borderNeonColor, Vector2.zero);
             settingsPopupObj.name = "SettingsPopup";
 
             // Title
@@ -1006,7 +875,7 @@ namespace TubityWAI
             bodyShadow.effectDistance = new Vector2(1.5f, -1.5f);
 
             // 1. Remove Ads Button (Glassmorphic)
-            GameObject removeAdsBtnObj = CreateGlassmorphicIconButton(settingsPopupObj.transform, new Vector2(420f, 55f), textGoldColor, "", Color.clear);
+            GameObject removeAdsBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(settingsPopupObj.transform, new Vector2(420f, 55f), textGoldColor, "", Color.clear);
             removeAdsBtnObj.name = "RemoveAdsButton";
             RectTransform removeAdsRect = removeAdsBtnObj.GetComponent<RectTransform>();
             removeAdsRect.anchorMin = new Vector2(0.5f, 0.58f);
@@ -1045,7 +914,7 @@ namespace TubityWAI
             ratShadow.effectDistance = new Vector2(1.5f, -1.5f);
 
             // 2. Restore Purchases Button (Glassmorphic)
-            GameObject restoreBtnObj = CreateGlassmorphicIconButton(settingsPopupObj.transform, new Vector2(420f, 55f), borderNeonColor, "", Color.clear);
+            GameObject restoreBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(settingsPopupObj.transform, new Vector2(420f, 55f), borderNeonColor, "", Color.clear);
             restoreBtnObj.name = "RestoreButton";
             RectTransform restoreRect = restoreBtnObj.GetComponent<RectTransform>();
             restoreRect.anchorMin = new Vector2(0.5f, 0.42f);
@@ -1080,7 +949,7 @@ namespace TubityWAI
             restShadow.effectDistance = new Vector2(1.5f, -1.5f);
 
             // 3. Restore Default Settings Button (Glassmorphic)
-            GameObject resetDefaultsBtnObj = CreateGlassmorphicIconButton(settingsPopupObj.transform, new Vector2(420f, 55f), neonMagentaColor, "", Color.clear);
+            GameObject resetDefaultsBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(settingsPopupObj.transform, new Vector2(420f, 55f), neonMagentaColor, "", Color.clear);
             resetDefaultsBtnObj.name = "RestoreDefaultsButton";
             RectTransform resetDefaultsRect = resetDefaultsBtnObj.GetComponent<RectTransform>();
             resetDefaultsRect.anchorMin = new Vector2(0.5f, 0.26f);
@@ -1109,7 +978,7 @@ namespace TubityWAI
             resetShadow.effectDistance = new Vector2(1.5f, -1.5f);
 
             // 4. Close Button (Glassmorphic Icon-Only: \u2715)
-            GameObject closeBtnObj = CreateGlassmorphicIconButton(settingsPopupObj.transform, new Vector2(140f, 48f), borderNeonColor, "\u2715", Color.white, 26);
+            GameObject closeBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(settingsPopupObj.transform, new Vector2(140f, 48f), borderNeonColor, "\u2715", Color.white, 26);
             closeBtnObj.name = "CloseButton";
             RectTransform closeRect = closeBtnObj.GetComponent<RectTransform>();
             closeRect.anchorMin = new Vector2(0.5f, 0.08f);
@@ -1126,6 +995,7 @@ namespace TubityWAI
             SetTopLevelMenuVisible(false);
             if (layer2Obj != null) layer2Obj.SetActive(false);
             if (layer3Obj != null) layer3Obj.SetActive(false);
+            if (layer4Obj != null) layer4Obj.SetActive(false);
 
             UpdateSettingsUI();
             if (settingsPopupObj != null) settingsPopupObj.SetActive(true);
@@ -1168,6 +1038,269 @@ namespace TubityWAI
                     removeAdsText.color = Color.white;
                 }
             }
+        }
+
+        // ==========================================
+        // LAYER 4: SHOP MENU
+        // ==========================================
+        private void CreateShopUI()
+        {
+            layer4Obj = new GameObject("Layer4_ShopMenu");
+            layer4Obj.transform.SetParent(canvasObj.transform, false);
+            RectTransform l4Rect = layer4Obj.AddComponent<RectTransform>();
+            l4Rect.anchorMin = Vector2.zero;
+            l4Rect.anchorMax = Vector2.one;
+            l4Rect.sizeDelta = Vector2.zero;
+
+            GameObject l4Panel = GlassUIFactory.CreateGlassmorphicPanel(layer4Obj.transform, new Vector2(1240f, 680f), textGoldColor, new Vector2(0f, 20f));
+            l4Panel.name = "L4_Panel";
+
+            // Title indicator text
+            GameObject indObj = new GameObject("L4_Indicator");
+            indObj.transform.SetParent(l4Panel.transform, false);
+            RectTransform indRect = indObj.AddComponent<RectTransform>();
+            indRect.anchorMin = new Vector2(0f, 0.86f);
+            indRect.anchorMax = new Vector2(1f, 0.98f);
+            indRect.sizeDelta = Vector2.zero;
+
+            shopTotalCoinsText = indObj.AddComponent<Text>();
+            shopTotalCoinsText.font = defaultFont;
+            shopTotalCoinsText.fontSize = 28;
+            shopTotalCoinsText.fontStyle = FontStyle.Bold;
+            shopTotalCoinsText.alignment = TextAnchor.MiddleCenter;
+            shopTotalCoinsText.color = textGoldColor;
+            shopTotalCoinsText.text = "SKIN SHOP   |   COINS: 0";
+
+            Shadow indShadow = indObj.AddComponent<Shadow>();
+            indShadow.effectColor = new Color(0f, 0f, 0f, 0.85f);
+            indShadow.effectDistance = new Vector2(2f, -2f);
+
+            // Skin Buttons Grid
+            GameObject l4GridObj = new GameObject("L4_Grid");
+            l4GridObj.transform.SetParent(l4Panel.transform, false);
+            RectTransform l4GridRect = l4GridObj.AddComponent<RectTransform>();
+            l4GridRect.anchorMin = new Vector2(0.08f, 0.22f);
+            l4GridRect.anchorMax = new Vector2(0.92f, 0.83f);
+            l4GridRect.sizeDelta = Vector2.zero;
+
+            GridLayoutGroup l4Grid = l4GridObj.AddComponent<GridLayoutGroup>();
+            l4Grid.cellSize = new Vector2(290f, 160f);
+            l4Grid.spacing = new Vector2(40f, 24f);
+            l4Grid.childAlignment = TextAnchor.MiddleCenter;
+
+            for (int i = 0; i < 6; i++)
+            {
+                Color bCol = (i % 2 == 0) ? textGoldColor : borderNeonColor;
+                GameObject skinBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(l4GridObj.transform, new Vector2(290f, 160f), bCol, "", Color.clear);
+                skinBtnObj.name = "SkinButton_" + i;
+
+                // Icon
+                GameObject iconObj = new GameObject("SkinIconText");
+                iconObj.transform.SetParent(skinBtnObj.transform, false);
+                RectTransform iconRect = iconObj.AddComponent<RectTransform>();
+                iconRect.anchorMin = new Vector2(0f, 0.45f);
+                iconRect.anchorMax = new Vector2(1f, 0.90f);
+                iconRect.sizeDelta = Vector2.zero;
+
+                Text iconText = iconObj.AddComponent<Text>();
+                iconText.font = defaultFont;
+                iconText.fontSize = 50;
+                iconText.fontStyle = FontStyle.Bold;
+                iconText.alignment = TextAnchor.MiddleCenter;
+                iconText.color = bCol;
+
+                Shadow iconShadow = iconObj.AddComponent<Shadow>();
+                iconShadow.effectColor = new Color(0f, 0f, 0f, 0.85f);
+                iconShadow.effectDistance = new Vector2(2f, -2f);
+
+                // Skin Name
+                GameObject numObj = new GameObject("SkinNameText");
+                numObj.transform.SetParent(skinBtnObj.transform, false);
+                RectTransform numRect = numObj.AddComponent<RectTransform>();
+                numRect.anchorMin = new Vector2(0f, 0.25f);
+                numRect.anchorMax = new Vector2(1f, 0.45f);
+                numRect.sizeDelta = Vector2.zero;
+
+                Text numText = numObj.AddComponent<Text>();
+                numText.font = defaultFont;
+                numText.fontSize = 20;
+                numText.fontStyle = FontStyle.Bold;
+                numText.alignment = TextAnchor.MiddleCenter;
+                numText.color = Color.white;
+
+                Shadow numShadow = numObj.AddComponent<Shadow>();
+                numShadow.effectColor = new Color(0f, 0f, 0f, 0.85f);
+                numShadow.effectDistance = new Vector2(2f, -2f);
+
+                // Subtitle (Price or Status)
+                GameObject subObj = new GameObject("SkinSubText");
+                subObj.transform.SetParent(skinBtnObj.transform, false);
+                RectTransform subRect = subObj.AddComponent<RectTransform>();
+                subRect.anchorMin = new Vector2(0f, 0.05f);
+                subRect.anchorMax = new Vector2(1f, 0.25f);
+                subRect.sizeDelta = Vector2.zero;
+
+                Text subText = subObj.AddComponent<Text>();
+                subText.font = defaultFont;
+                subText.fontSize = 16;
+                subText.fontStyle = FontStyle.Bold;
+                subText.alignment = TextAnchor.MiddleCenter;
+                subText.color = textGoldColor;
+
+                Shadow subShadow = subObj.AddComponent<Shadow>();
+                subShadow.effectColor = new Color(0f, 0f, 0f, 0.85f);
+                subShadow.effectDistance = new Vector2(1.5f, -1.5f);
+
+                shopButtons.Add(skinBtnObj);
+            }
+
+            // Back Button
+            GameObject backBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(l4Panel.transform, new Vector2(140f, 60f), neonMagentaColor, "\u25C0", Color.white, 32);
+            backBtnObj.name = "BackButton";
+            RectTransform backRect = backBtnObj.GetComponent<RectTransform>();
+            backRect.anchorMin = new Vector2(0.08f, 0.08f);
+            backRect.anchorMax = new Vector2(0.08f, 0.08f);
+            backRect.pivot = new Vector2(0f, 0.5f);
+            backBtnObj.GetComponent<Button>().onClick.AddListener(ShowLayer1);
+
+            // Prev Button
+            GameObject prevBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(l4Panel.transform, new Vector2(120f, 60f), textGoldColor, "\u25C0", Color.white, 32);
+            prevBtnObj.name = "PrevButton";
+            RectTransform prevRect = prevBtnObj.GetComponent<RectTransform>();
+            prevRect.anchorMin = new Vector2(0.82f, 0.08f);
+            prevRect.anchorMax = new Vector2(0.82f, 0.08f);
+            prevBtnObj.GetComponent<Button>().onClick.AddListener(() => ChangeShopPage(-1));
+
+            // Next Button
+            GameObject nextBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(l4Panel.transform, new Vector2(120f, 60f), textGoldColor, "\u25B6", Color.white, 32);
+            nextBtnObj.name = "NextButton";
+            RectTransform nextRect = nextBtnObj.GetComponent<RectTransform>();
+            nextRect.anchorMin = new Vector2(0.94f, 0.08f);
+            nextRect.anchorMax = new Vector2(0.94f, 0.08f);
+            nextBtnObj.GetComponent<Button>().onClick.AddListener(() => ChangeShopPage(1));
+
+            layer4Obj.SetActive(false);
+        }
+
+        private void ShowShopMenu()
+        {
+            SetTopLevelMenuVisible(false);
+
+            if (layer2Obj != null) layer2Obj.SetActive(false);
+            if (layer3Obj != null) layer3Obj.SetActive(false);
+            if (settingsPopupObj != null) settingsPopupObj.SetActive(false);
+            if (layer4Obj != null) layer4Obj.SetActive(true);
+
+            currentShopPage = 0;
+            RefreshShopGrid();
+        }
+
+        private void ChangeShopPage(int delta)
+        {
+            int targetPage = currentShopPage + delta;
+            int totalPages = Mathf.CeilToInt(shopSkins.Length / 6f);
+            
+            if (targetPage >= 0 && targetPage < totalPages)
+            {
+                currentShopPage = targetPage;
+                RefreshShopGrid();
+            }
+        }
+
+        private void RefreshShopGrid()
+        {
+            if (GameManager.Instance == null) return;
+            
+            if (shopTotalCoinsText != null)
+            {
+                shopTotalCoinsText.text = $"SKIN SHOP   |   COINS: {GameManager.Instance.TotalCoins}";
+            }
+
+            int startIndex = currentShopPage * 6;
+            
+            for (int i = 0; i < 6; i++)
+            {
+                int skinIndex = startIndex + i;
+                GameObject btnObj = shopButtons[i];
+                Button btn = btnObj.GetComponent<Button>();
+
+                Text[] texts = btnObj.GetComponentsInChildren<Text>();
+                Text iconText = (texts.Length > 0) ? texts[0] : null;
+                Text nameText = (texts.Length > 1) ? texts[1] : null;
+                Text subText = (texts.Length > 2) ? texts[2] : null;
+
+                if (skinIndex < shopSkins.Length)
+                {
+                    SkinItem skin = shopSkins[skinIndex];
+                    btnObj.SetActive(true);
+
+                    if (iconText != null) iconText.text = skin.Icon;
+                    if (nameText != null) nameText.text = skin.Name;
+
+                    bool isUnlocked = GameManager.Instance.IsSkinUnlocked(skinIndex);
+                    bool isEquipped = GameManager.Instance.EquippedSkin == skinIndex;
+
+                    if (isEquipped)
+                    {
+                        if (subText != null)
+                        {
+                            subText.text = "EQUIPPED";
+                            subText.color = borderNeonColor;
+                        }
+                        btn.interactable = false; // Disable if already equipped
+                    }
+                    else if (isUnlocked)
+                    {
+                        if (subText != null)
+                        {
+                            subText.text = "EQUIP";
+                            subText.color = Color.white;
+                        }
+                        btn.interactable = true;
+                    }
+                    else
+                    {
+                        if (subText != null)
+                        {
+                            subText.text = $"BUY: {skin.Price}";
+                            subText.color = (GameManager.Instance.TotalCoins >= skin.Price) ? textGoldColor : new Color(0.6f, 0.6f, 0.6f);
+                        }
+                        // Disable if they don't have enough coins, to prevent confusion when clicking does nothing
+                        btn.interactable = (GameManager.Instance.TotalCoins >= skin.Price);
+                    }
+
+                    btn.onClick.RemoveAllListeners();
+                    int capturedIndex = skinIndex; // ensure capture
+                    btn.onClick.AddListener(() => OnSkinButtonClicked(capturedIndex));
+                }
+                else
+                {
+                    btnObj.SetActive(false);
+                }
+            }
+        }
+
+        private void OnSkinButtonClicked(int skinIndex)
+        {
+            if (GameManager.Instance == null) return;
+
+            bool isUnlocked = GameManager.Instance.IsSkinUnlocked(skinIndex);
+            
+            if (isUnlocked)
+            {
+                GameManager.Instance.EquippedSkin = skinIndex;
+            }
+            else
+            {
+                int price = shopSkins[skinIndex].Price;
+                if (GameManager.Instance.DeductCoins(price))
+                {
+                    GameManager.Instance.UnlockSkin(skinIndex);
+                    GameManager.Instance.EquippedSkin = skinIndex; // Auto-equip on purchase
+                }
+            }
+
+            RefreshShopGrid();
         }
 
         private void OnDestroy()

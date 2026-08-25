@@ -31,13 +31,16 @@ namespace TubityWAI
             };
 
             Shader litShader = Shader.Find("Universal Render Pipeline/Lit");
+            if (litShader == null) litShader = Shader.Find("Universal Render Pipeline/Unlit");
             if (litShader == null) litShader = Shader.Find("Standard");
+            if (litShader == null) litShader = Shader.Find("Sprites/Default");
+            if (litShader == null) litShader = Shader.Find("Unlit/Color");
 
             for (int i = 0; i < flatDarkColors.Length; i++)
             {
                 Color c = flatDarkColors[i];
 
-                Material mat = new Material(litShader);
+                Material mat = (litShader != null) ? new Material(litShader) : new Material(Shader.Find("Hidden/InternalErrorShader"));
                 mat.name = "FlatDarkBuildingMat_" + i;
 
                 if (mat.HasProperty("_BaseColor"))

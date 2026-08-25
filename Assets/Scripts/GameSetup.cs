@@ -103,6 +103,12 @@ namespace TubityWAI
         [Tooltip("Neon color of the collectible coins.")]
         public Color coinColor = new Color(1f, 0.75f, 0f); // Neon Gold/Yellow
 
+        [Tooltip("Neon color of the powerups.")]
+        public Color powerupColor = new Color(0.8f, 1f, 1f); // Glowing Cyan/White
+
+        [Tooltip("Neon color of the magnet powerup.")]
+        public Color magnetColor = new Color(0.8f, 0.2f, 1f); // Neon Purple
+
         [Header("Obstacle Settings")]
         [Tooltip("Neon color of the obstacles.")]
         public Color obstacleColor = new Color(1f, 0f, 0.2f); // Neon Hot Pink/Red
@@ -122,6 +128,12 @@ namespace TubityWAI
             if (Instance == null || Instance == this)
             {
                 Instance = this;
+
+                if (FindFirstObjectByType<TVOSMenuNavigator>() == null)
+                {
+                    GameObject navObj = new GameObject("TVOSMenuNavigatorController");
+                    navObj.AddComponent<TVOSMenuNavigator>();
+                }
 
                 // Spawn MainMenu programmatically at startup if toggled and not replaying
                 bool isReplaying = GameManager.shouldReplayOnLoad && GameManager.lastLevelConfig != null;
@@ -269,6 +281,8 @@ namespace TubityWAI
 
             Material markerMaterial = CreateEmissiveMaterial("MarkerMaterial", markerColor, 4.5f, 0.1f);
             Material obstacleMaterial = CreateEmissiveMaterial("ObstacleMaterial", obstacleColor, 4.0f, 0.1f);
+            Material powerupMaterial = CreateEmissiveMaterial("PowerupMaterial", powerupColor, 5.5f, 0.5f);
+            Material magnetMaterial = CreateEmissiveMaterial("MagnetMaterial", magnetColor, 5.5f, 0.5f);
 
             // Generate detailed dashed/antialiased texture for the marker rings
             Texture2D markerTex = GenerateMarkerTexture();
@@ -348,15 +362,26 @@ namespace TubityWAI
                 }
                 
                 Material playerMaterial;
-                if (config.isTestLevel)
+                int equippedSkin = GameManager.Instance != null ? GameManager.Instance.EquippedSkin : 0;
+                bool isFXSkin = equippedSkin >= 6;
+
+                if (config.isTestLevel || (equippedSkin == 1) || isFXSkin)
                 {
-                    playerMaterial = CreateEmissiveMaterial("PlayerMaterial_" + i, color, 2.5f, 0.8f);
+                    // For Solid Core (1) or FX skins or test levels, we just use a base emissive material (no grid)
+                    playerMaterial = CreateEmissiveMaterial("PlayerMaterial_" + i, color, 3.0f, 0.9f);
                 }
                 else
                 {
-                    // Generate a retro-cyber grid texture specifically matching this sphere's color
-                    Texture2D sphereGridTex = GenerateSphereGridTexture(color * 2.0f, color * 0.15f);
-                    playerMaterial = CreateSphereMaterial("PlayerMaterial_" + i, color, 2.5f, 0.8f, sphereGridTex);
+                    // Generate texture based on equipped skin
+                    Texture2D skinTex = null;
+                    if (equippedSkin == 0) skinTex = GenerateSphereGridTexture(color * 2.0f, color * 0.15f);
+                    else if (equippedSkin == 2) skinTex = GenerateStripesTexture(color * 2.0f, color * 0.15f);
+                    else if (equippedSkin == 3) skinTex = GenerateCheckerboardTexture(color * 2.0f, color * 0.15f);
+                    else if (equippedSkin == 4) skinTex = GenerateCircuitTexture(color * 2.0f, color * 0.15f);
+                    else if (equippedSkin == 5) skinTex = GenerateDiamondTexture(color * 2.0f, color * 0.15f);
+                    else skinTex = GenerateSphereGridTexture(color * 2.0f, color * 0.15f); // fallback
+
+                    playerMaterial = CreateSphereMaterial("PlayerMaterial_" + i, color, 2.5f, 0.8f, skinTex);
                 }
 
                 GameObject sphereObj = GameObject.CreatePrimitive(PrimitiveType.Sphere);
@@ -382,18 +407,26 @@ namespace TubityWAI
                 light.range = 7f;
                 light.intensity = 1.5f;
 
-                // If test level, attach the procedural EnergySphereEffects component
-                if (config.isTestLevel)
+                // Apply FX if it's a test level OR an FX skin is equipped
+                if (config.isTestLevel || isFXSkin)
                 {
                     EnergySphereEffects effects = sphereObj.AddComponent<EnergySphereEffects>();
-                    if (config.levelNumber == 101)
-                        effects.preset = EnergySphereEffects.EffectPreset.Plasma;
-                    else if (config.levelNumber == 102)
-                        effects.preset = EnergySphereEffects.EffectPreset.Warp;
-                    else if (config.levelNumber == 103)
-                        effects.preset = EnergySphereEffects.EffectPreset.Gauntlet;
-                    else if (config.levelNumber == 106)
-                        effects.preset = EnergySphereEffects.EffectPreset.City;
+                    
+                    if (config.isTestLevel)
+                    {
+                        if (config.levelNumber == 101) effects.preset = EnergySphereEffects.EffectPreset.Plasma;
+                        else if (config.levelNumber == 102) effects.preset = EnergySphereEffects.EffectPreset.Warp;
+                        else if (config.levelNumber == 103) effects.preset = EnergySphereEffects.EffectPreset.Gauntlet;
+                        else if (config.levelNumber == 106) effects.preset = EnergySphereEffects.EffectPreset.City;
+                    }
+                    else
+                    {
+                        // Map shop skins to presets
+                        if (equippedSkin == 6) effects.preset = EnergySphereEffects.EffectPreset.Plasma;
+                        else if (equippedSkin == 7) effects.preset = EnergySphereEffects.EffectPreset.Warp;
+                        else if (equippedSkin == 8) effects.preset = EnergySphereEffects.EffectPreset.Gauntlet;
+                        else if (equippedSkin == 9) effects.preset = EnergySphereEffects.EffectPreset.City;
+                    }
                 }
 
                 // Position spheres equidistant around the entire 360-degree circle
@@ -481,6 +514,8 @@ namespace TubityWAI
             tunnelGen.tunnelMaterial = tunnelMaterial;
             tunnelGen.markerMaterial = markerMaterial;
             tunnelGen.coinMaterials = coinMaterials;
+            tunnelGen.powerupMaterial = powerupMaterial;
+            tunnelGen.magnetMaterial = magnetMaterial;
             tunnelGen.obstacleMaterial = obstacleMaterial;
             tunnelGen.transparentObstacleMaterials = transparentObstacleMaterials;
             tunnelGen.obstacleSpawnProbability = obstacleSpawnProbability;
@@ -541,16 +576,37 @@ namespace TubityWAI
             bloom.scatter.Override(bloomScatter);
         }
 
+        private Shader GetSafeShader()
+        {
+            Shader s = Shader.Find("Universal Render Pipeline/Lit");
+            if (s == null) s = Shader.Find("Universal Render Pipeline/Unlit");
+            if (s == null) s = Shader.Find("Standard");
+            if (s == null) s = Shader.Find("Sprites/Default");
+            if (s == null) s = Shader.Find("Unlit/Color");
+            if (s == null) s = Shader.Find("Unlit/Texture");
+
+            if (s == null && GraphicsSettings.defaultRenderPipeline != null && GraphicsSettings.defaultRenderPipeline.defaultMaterial != null)
+            {
+                s = GraphicsSettings.defaultRenderPipeline.defaultMaterial.shader;
+            }
+            if (s == null && Canvas.GetDefaultCanvasMaterial() != null)
+            {
+                s = Canvas.GetDefaultCanvasMaterial().shader;
+            }
+            return s;
+        }
+
+        private Material CreateSafeMaterial(string name)
+        {
+            Shader s = GetSafeShader();
+            Material mat = (s != null) ? new Material(s) : new Material(Canvas.GetDefaultCanvasMaterial());
+            mat.name = name;
+            return mat;
+        }
+
         private Material CreateEmissiveMaterial(string name, Color color, float emissionIntensity, float smoothness)
         {
-            Shader urpShader = Shader.Find("Universal Render Pipeline/Lit");
-            if (urpShader == null)
-            {
-                urpShader = Shader.Find("Standard");
-            }
-            
-            Material mat = new Material(urpShader);
-            mat.name = name;
+            Material mat = CreateSafeMaterial(name);
 
             if (mat.HasProperty("_BaseColor"))
                 mat.SetColor("_BaseColor", color * 0.5f);
@@ -568,14 +624,7 @@ namespace TubityWAI
 
         private Material CreateSpecularMaterial(string name, Color color, float smoothness)
         {
-            Shader urpShader = Shader.Find("Universal Render Pipeline/Lit");
-            if (urpShader == null)
-            {
-                urpShader = Shader.Find("Standard");
-            }
-
-            Material mat = new Material(urpShader);
-            mat.name = name;
+            Material mat = CreateSafeMaterial(name);
 
             if (mat.HasProperty("_BaseColor"))
                 mat.SetColor("_BaseColor", color);
@@ -617,14 +666,7 @@ namespace TubityWAI
 
         private Material CreateSphereMaterial(string name, Color color, float emissionIntensity, float smoothness, Texture2D tex)
         {
-            Shader urpShader = Shader.Find("Universal Render Pipeline/Lit");
-            if (urpShader == null)
-            {
-                urpShader = Shader.Find("Standard");
-            }
-
-            Material mat = new Material(urpShader);
-            mat.name = name;
+            Material mat = CreateSafeMaterial(name);
 
             // Set main texture and color
             if (mat.HasProperty("_BaseMap"))
@@ -688,16 +730,138 @@ namespace TubityWAI
             return tex;
         }
 
+        private Texture2D GenerateStripesTexture(Color lineColor, Color bgColor)
+        {
+            int size = 128;
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, true);
+            tex.wrapMode = TextureWrapMode.Clamp;
+            Color[] pixels = new Color[size * size];
+
+            int stripeWidth = 16;
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    // Vertical stripes wrapping the sphere
+                    bool isStripe = (x / stripeWidth) % 2 == 0;
+                    pixels[y * size + x] = isStripe ? lineColor : bgColor;
+                }
+            }
+            tex.SetPixels(pixels);
+            tex.Apply();
+            return tex;
+        }
+
+        private Texture2D GenerateCheckerboardTexture(Color lineColor, Color bgColor)
+        {
+            int size = 128;
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, true);
+            tex.wrapMode = TextureWrapMode.Clamp;
+            Color[] pixels = new Color[size * size];
+
+            int checkSize = 16;
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    bool isChecker = ((x / checkSize) % 2 == 0) ^ ((y / checkSize) % 2 == 0);
+                    pixels[y * size + x] = isChecker ? lineColor : bgColor;
+                }
+            }
+            tex.SetPixels(pixels);
+            tex.Apply();
+            return tex;
+        }
+
+        private Texture2D GenerateCircuitTexture(Color lineColor, Color bgColor)
+        {
+            int size = 128;
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, true);
+            tex.wrapMode = TextureWrapMode.Clamp;
+            Color[] pixels = new Color[size * size];
+            
+            // Base background
+            for (int i = 0; i < pixels.Length; i++) pixels[i] = bgColor;
+
+            int lineThickness = 2;
+            int numLines = 8;
+            
+            // Draw some "circuit" lines
+            for (int l = 0; l < numLines; l++)
+            {
+                int x0 = Random.Range(10, size - 10);
+                int y0 = Random.Range(10, size - 10);
+                int length = Random.Range(30, 80);
+                
+                // Draw line and dot
+                for (int d = 0; d < length; d++)
+                {
+                    // simple diagonal/straight routing
+                    int dx = (l % 2 == 0) ? d : (d / 2);
+                    int dy = (l % 2 == 0) ? (d / 2) : d;
+                    
+                    int px = Mathf.Clamp(x0 + dx, 0, size - 1);
+                    int py = Mathf.Clamp(y0 + dy, 0, size - 1);
+                    
+                    for (int tx = -lineThickness; tx <= lineThickness; tx++)
+                    {
+                        for (int ty = -lineThickness; ty <= lineThickness; ty++)
+                        {
+                            int px2 = Mathf.Clamp(px + tx, 0, size - 1);
+                            int py2 = Mathf.Clamp(py + ty, 0, size - 1);
+                            pixels[py2 * size + px2] = lineColor;
+                        }
+                    }
+                    
+                    // Draw node at end
+                    if (d == length - 1)
+                    {
+                        for (int nx = -4; nx <= 4; nx++)
+                        {
+                            for (int ny = -4; ny <= 4; ny++)
+                            {
+                                if (nx*nx + ny*ny <= 16)
+                                {
+                                    int px2 = Mathf.Clamp(px + nx, 0, size - 1);
+                                    int py2 = Mathf.Clamp(py + ny, 0, size - 1);
+                                    pixels[py2 * size + px2] = lineColor;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            tex.SetPixels(pixels);
+            tex.Apply();
+            return tex;
+        }
+
+        private Texture2D GenerateDiamondTexture(Color lineColor, Color bgColor)
+        {
+            int size = 128;
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, true);
+            tex.wrapMode = TextureWrapMode.Clamp;
+            Color[] pixels = new Color[size * size];
+
+            int diamondScale = 16;
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    int dx = x % diamondScale;
+                    int dy = y % diamondScale;
+                    bool isLine = Mathf.Abs(dx - dy) < 2 || Mathf.Abs((diamondScale - dx) - dy) < 2;
+                    pixels[y * size + x] = isLine ? lineColor : bgColor;
+                }
+            }
+            tex.SetPixels(pixels);
+            tex.Apply();
+            return tex;
+        }
+
         private Material CreateAdditiveGlowMaterial(Color color, Texture2D tex)
         {
-            Shader urpShader = Shader.Find("Universal Render Pipeline/Unlit");
-            if (urpShader == null)
-            {
-                urpShader = Shader.Find("Unlit/Texture");
-            }
-            
-            Material mat = new Material(urpShader);
-            mat.name = "AdditiveGlowMaterial";
+            Material mat = CreateSafeMaterial("AdditiveGlowMaterial");
             
             // Set shader keywords/properties for additive transparency
             mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
@@ -798,16 +962,9 @@ namespace TubityWAI
             return tex;
         }
 
-        private Material CreateTransparentMaterial(string name, Color color, float emissionIntensity, float smoothness)
+        private Material CreateTransparentMaterial(string name, Color color, float emissionIntensity = 1f, float smoothness = 0.5f)
         {
-            Shader urpShader = Shader.Find("Universal Render Pipeline/Lit");
-            if (urpShader == null)
-            {
-                urpShader = Shader.Find("Standard");
-            }
-            
-            Material mat = new Material(urpShader);
-            mat.name = name;
+            Material mat = CreateSafeMaterial(name);
 
             // Configure for standard alpha transparency blending in URP
             mat.SetFloat("_Surface", 1f); // 1 = Transparent

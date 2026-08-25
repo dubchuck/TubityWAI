@@ -114,8 +114,10 @@ namespace TubityWAI
             
             Shader unlitShader = Shader.Find("Universal Render Pipeline/Unlit");
             if (unlitShader == null) unlitShader = Shader.Find("Unlit/Texture");
+            if (unlitShader == null) unlitShader = Shader.Find("Sprites/Default");
+            if (unlitShader == null) unlitShader = Shader.Find("Unlit/Color");
             
-            Material outlineMat = new Material(unlitShader);
+            Material outlineMat = (unlitShader != null) ? new Material(unlitShader) : new Material(Shader.Find("Hidden/InternalErrorShader"));
             outlineMat.name = "OutlineMaterial";
             
             // Render only backfaces (Cull Front), creating the outer silhouette rim
@@ -414,12 +416,11 @@ namespace TubityWAI
         private Material CreateParticleMaterial(Texture2D tex)
         {
             Shader urpShader = Shader.Find("Universal Render Pipeline/Unlit");
-            if (urpShader == null)
-            {
-                urpShader = Shader.Find("Standard");
-            }
+            if (urpShader == null) urpShader = Shader.Find("Standard");
+            if (urpShader == null) urpShader = Shader.Find("Sprites/Default");
+            if (urpShader == null) urpShader = Shader.Find("Unlit/Color");
 
-            Material mat = new Material(urpShader);
+            Material mat = (urpShader != null) ? new Material(urpShader) : new Material(Shader.Find("Hidden/InternalErrorShader"));
             mat.name = "SoftParticleAdditiveMat";
 
             // Configure for additive transparency blending

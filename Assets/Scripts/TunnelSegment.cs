@@ -18,6 +18,8 @@ namespace TubityWAI
 
         [Header("Collectible Settings")]
         public Material[] coinMaterials;
+        public Material powerupMaterial;
+        public Material magnetMaterial;
 
         [Header("Obstacle Settings")]
         public Material obstacleMaterial; // standard solid red
@@ -220,6 +222,19 @@ namespace TubityWAI
             // 2. 40% probability to spawn a line of coins in each tunnel segment
             if (spawnCoins && Random.value < 0.4f)
             {
+                // 10% chance for Invincibility, 10% chance for Magnet
+                float powerupRoll = Random.value;
+                if (powerupMaterial != null && powerupRoll < 0.1f)
+                {
+                    SpawnSinglePowerup();
+                    return;
+                }
+                else if (magnetMaterial != null && powerupRoll < 0.2f)
+                {
+                    SpawnSingleMagnet();
+                    return;
+                }
+
                 int count = Random.Range(3, 6); // 3 to 5 coins in a row
                 float angle = Random.Range(0f, 2f * Mathf.PI); // Random angle around the cylinder track
                 float spacing = length / (count + 1);
@@ -289,6 +304,100 @@ namespace TubityWAI
                     collectible.hoverSpeed = 3.5f;
                 }
             }
+        }
+
+        private void SpawnSinglePowerup()
+        {
+            float angle = Random.Range(0f, 2f * Mathf.PI);
+            float localZ = length * 0.5f; // Spawn in the middle of the segment
+            float absoluteZ = transform.position.z + localZ;
+            Vector3 curveOffset = Vector3.zero;
+            LevelConfig config = (GameManager.Instance != null) ? GameManager.Instance.currentLevelConfig : null;
+            if (config != null)
+            {
+                curveOffset = config.GetCurveOffset(absoluteZ);
+            }
+
+            float spawnRadius = radius - 0.35f;
+
+            GameObject powerup = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            powerup.name = "Powerup";
+            powerup.transform.SetParent(this.transform, false);
+
+            float x = Mathf.Sin(angle) * spawnRadius + curveOffset.x;
+            float y = -Mathf.Cos(angle) * spawnRadius + curveOffset.y;
+            powerup.transform.localPosition = new Vector3(x, y, localZ);
+            powerup.transform.localScale = new Vector3(0.7f, 0.7f, 0.7f);
+
+            Collider oldCol = powerup.GetComponent<Collider>();
+            if (oldCol != null)
+            {
+                DestroyImmediate(oldCol);
+            }
+
+            SphereCollider sphereCol = powerup.AddComponent<SphereCollider>();
+            sphereCol.isTrigger = true;
+            sphereCol.radius = 1.3f;
+
+            MeshRenderer mr = powerup.GetComponent<MeshRenderer>();
+            if (mr != null)
+            {
+                mr.sharedMaterial = powerupMaterial;
+            }
+
+            Collectible collectible = powerup.AddComponent<Collectible>();
+            collectible.type = CollectibleType.Powerup;
+            collectible.colorIndex = -1; // Any color can collect
+            collectible.rotationSpeed = 250f;
+            collectible.hoverAmplitude = 0.15f;
+            collectible.hoverSpeed = 5f;
+        }
+
+        private void SpawnSingleMagnet()
+        {
+            float angle = Random.Range(0f, 2f * Mathf.PI);
+            float localZ = length * 0.5f; // Spawn in the middle of the segment
+            float absoluteZ = transform.position.z + localZ;
+            Vector3 curveOffset = Vector3.zero;
+            LevelConfig config = (GameManager.Instance != null) ? GameManager.Instance.currentLevelConfig : null;
+            if (config != null)
+            {
+                curveOffset = config.GetCurveOffset(absoluteZ);
+            }
+
+            float spawnRadius = radius - 0.35f;
+
+            GameObject magnet = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            magnet.name = "MagnetPowerup";
+            magnet.transform.SetParent(this.transform, false);
+
+            float x = Mathf.Sin(angle) * spawnRadius + curveOffset.x;
+            float y = -Mathf.Cos(angle) * spawnRadius + curveOffset.y;
+            magnet.transform.localPosition = new Vector3(x, y, localZ);
+            magnet.transform.localScale = new Vector3(0.7f, 0.7f, 0.7f);
+
+            Collider oldCol = magnet.GetComponent<Collider>();
+            if (oldCol != null)
+            {
+                DestroyImmediate(oldCol);
+            }
+
+            SphereCollider sphereCol = magnet.AddComponent<SphereCollider>();
+            sphereCol.isTrigger = true;
+            sphereCol.radius = 1.3f;
+
+            MeshRenderer mr = magnet.GetComponent<MeshRenderer>();
+            if (mr != null)
+            {
+                mr.sharedMaterial = magnetMaterial;
+            }
+
+            Collectible collectible = magnet.AddComponent<Collectible>();
+            collectible.type = CollectibleType.MagnetPowerup;
+            collectible.colorIndex = -1; // Any color can collect
+            collectible.rotationSpeed = 250f;
+            collectible.hoverAmplitude = 0.15f;
+            collectible.hoverSpeed = 5f;
         }
 
         private void SpawnObstacles()

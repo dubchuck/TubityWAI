@@ -31,6 +31,14 @@ Create App Store Connect Record
 
 Create Remove Ads In-App Purchase
 
+### ios create_achievements
+
+```sh
+[bundle exec] fastlane ios create_achievements
+```
+
+Create Game Center Achievements on App Store Connect
+
 ### ios build_ipa
 
 ```sh
@@ -63,6 +71,22 @@ Upload only local metadata and screenshots to App Store Connect
 
 Upload only the IPA build to TestFlight
 
+### ios build_tvos_ipa
+
+```sh
+[bundle exec] fastlane ios build_tvos_ipa
+```
+
+Build and sign the tvOS IPA using gym
+
+### ios upload_tvos_to_testflight
+
+```sh
+[bundle exec] fastlane ios upload_tvos_to_testflight
+```
+
+Upload tvOS build to TestFlight
+
 ----
 
 
@@ -75,6 +99,19 @@ Upload only the IPA build to TestFlight
 ```
 
 Upload Android App Bundle (AAB) to Google Play Console Internal Track
+
+----
+
+
+## Mac
+
+### mac upload_mac_to_app_store
+
+```sh
+[bundle exec] fastlane mac upload_mac_to_app_store
+```
+
+Upload macOS .pkg installer package to App Store Connect / TestFlight
 
 ----
 

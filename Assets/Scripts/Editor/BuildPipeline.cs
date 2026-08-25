@@ -221,5 +221,189 @@ namespace TubityWAI
                 }
             }
         }
+
+        [MenuItem("Build/Export Mac App Store Project")]
+        public static void BuildMacProject()
+        {
+            string[] scenes = { "Assets/Scenes/SampleScene.unity" };
+            string buildPath = "Build-macOS/TubityX.app";
+
+            Debug.Log("[BuildPipeline] Setting Application Identifier and Product Name for macOS...");
+            string envBundleId = System.Environment.GetEnvironmentVariable("BUNDLE_ID");
+            if (!string.IsNullOrEmpty(envBundleId))
+            {
+                PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.Standalone, envBundleId);
+                Debug.Log($"[BuildPipeline] Set Standalone Application Identifier to: {envBundleId}");
+            }
+
+            string envAppName = System.Environment.GetEnvironmentVariable("APP_NAME");
+            if (!string.IsNullOrEmpty(envAppName))
+            {
+                PlayerSettings.productName = envAppName;
+                Debug.Log($"[BuildPipeline] Set Product Name to: {envAppName}");
+            }
+
+            string envBuildNumber = System.Environment.GetEnvironmentVariable("BUILD_NUMBER");
+            if (!string.IsNullOrEmpty(envBuildNumber))
+            {
+                PlayerSettings.macOS.buildNumber = envBuildNumber;
+                Debug.Log($"[BuildPipeline] Set macOS buildNumber to: {envBuildNumber}");
+            }
+            else
+            {
+                if (int.TryParse(PlayerSettings.macOS.buildNumber, out int macBuildNum))
+                {
+                    PlayerSettings.macOS.buildNumber = (macBuildNum + 1).ToString();
+                }
+                else
+                {
+                    PlayerSettings.macOS.buildNumber = "1";
+                }
+                Debug.Log($"[BuildPipeline] macOS buildNumber set to: {PlayerSettings.macOS.buildNumber}");
+            }
+
+            Debug.Log("[BuildPipeline] Configuring App Icon...");
+            AssetDatabase.ImportAsset("Assets/AppIcon.png", ImportAssetOptions.ForceUpdate);
+            Texture2D appIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/AppIcon.png");
+            if (appIcon != null)
+            {
+                TextureImporter importer = AssetImporter.GetAtPath("Assets/AppIcon.png") as TextureImporter;
+                if (importer != null)
+                {
+                    importer.textureType = TextureImporterType.Default;
+                    importer.textureShape = TextureImporterShape.Texture2D;
+                    importer.isReadable = true;
+                    importer.mipmapEnabled = false;
+                    importer.SaveAndReimport();
+                }
+                PlayerSettings.SetIconsForTargetGroup(BuildTargetGroup.Standalone, new Texture2D[] { appIcon });
+                Debug.Log("[BuildPipeline] App Icon successfully assigned to Standalone Target Group.");
+            }
+            else
+            {
+                Debug.LogWarning("[BuildPipeline] Assets/AppIcon.png not found. Skipping icon assignment.");
+            }
+
+            Debug.Log("[BuildPipeline] Starting macOS App Store Standalone build...");
+            BuildPlayerOptions options = new BuildPlayerOptions();
+            options.scenes = scenes;
+            options.locationPathName = buildPath;
+            options.target = BuildTarget.StandaloneOSX;
+            options.options = BuildOptions.None;
+
+            var report = UnityEditor.BuildPipeline.BuildPlayer(options);
+            var summary = report.summary;
+
+            if (summary.result == UnityEditor.Build.Reporting.BuildResult.Succeeded)
+            {
+                Debug.Log($"[BuildPipeline] Success! macOS app exported to: {buildPath}");
+            }
+            else
+            {
+                Debug.LogError($"[BuildPipeline] Failed! Result: {summary.result}");
+                if (Application.isBatchMode)
+                {
+                    EditorApplication.Exit(1);
+                }
+            }
+        }
+
+        [MenuItem("Build/Export tvOS Project")]
+        public static void BuildtvOSProject()
+        {
+            string[] scenes = { "Assets/Scenes/SampleScene.unity" };
+            string buildPath = "Build-tvOS";
+
+            Debug.Log("[BuildPipeline] Setting Application Identifier and Product Name for tvOS...");
+            string envBundleId = System.Environment.GetEnvironmentVariable("BUNDLE_ID");
+            if (!string.IsNullOrEmpty(envBundleId))
+            {
+                PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.tvOS, envBundleId);
+                Debug.Log($"[BuildPipeline] Set tvOS Application Identifier to: {envBundleId}");
+            }
+
+            string envAppName = System.Environment.GetEnvironmentVariable("APP_NAME");
+            if (!string.IsNullOrEmpty(envAppName))
+            {
+                PlayerSettings.productName = envAppName;
+                Debug.Log($"[BuildPipeline] Set Product Name to: {envAppName}");
+            }
+
+            string envBuildNumber = System.Environment.GetEnvironmentVariable("BUILD_NUMBER");
+            if (!string.IsNullOrEmpty(envBuildNumber))
+            {
+                PlayerSettings.tvOS.buildNumber = envBuildNumber;
+                Debug.Log($"[BuildPipeline] Set tvOS buildNumber to: {envBuildNumber}");
+            }
+            else
+            {
+                if (int.TryParse(PlayerSettings.tvOS.buildNumber, out int tvBuildNum))
+                {
+                    PlayerSettings.tvOS.buildNumber = (tvBuildNum + 1).ToString();
+                }
+                else
+                {
+                    PlayerSettings.tvOS.buildNumber = "1";
+                }
+                Debug.Log($"[BuildPipeline] tvOS buildNumber set to: {PlayerSettings.tvOS.buildNumber}");
+            }
+
+            string envSdk = System.Environment.GetEnvironmentVariable("TVOS_SDK");
+            if (!string.IsNullOrEmpty(envSdk) && envSdk.ToLower() == "simulator")
+            {
+                PlayerSettings.tvOS.sdkVersion = tvOSSdkVersion.Simulator;
+                Debug.Log("[BuildPipeline] Set tvOS SDK Version to: Simulator");
+            }
+            else
+            {
+                PlayerSettings.tvOS.sdkVersion = tvOSSdkVersion.Device;
+                Debug.Log("[BuildPipeline] Set tvOS SDK Version to: Device");
+            }
+
+            Debug.Log("[BuildPipeline] Configuring App Icon...");
+            AssetDatabase.ImportAsset("Assets/AppIcon.png", ImportAssetOptions.ForceUpdate);
+            Texture2D appIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/AppIcon.png");
+            if (appIcon != null)
+            {
+                TextureImporter importer = AssetImporter.GetAtPath("Assets/AppIcon.png") as TextureImporter;
+                if (importer != null)
+                {
+                    importer.textureType = TextureImporterType.Default;
+                    importer.textureShape = TextureImporterShape.Texture2D;
+                    importer.isReadable = true;
+                    importer.mipmapEnabled = false;
+                    importer.SaveAndReimport();
+                }
+                PlayerSettings.SetIconsForTargetGroup(BuildTargetGroup.tvOS, new Texture2D[] { appIcon });
+                Debug.Log("[BuildPipeline] App Icon successfully assigned to tvOS Target Group.");
+            }
+            else
+            {
+                Debug.LogWarning("[BuildPipeline] Assets/AppIcon.png not found. Skipping icon assignment.");
+            }
+
+            Debug.Log("[BuildPipeline] Starting tvOS Xcode project export...");
+            BuildPlayerOptions options = new BuildPlayerOptions();
+            options.scenes = scenes;
+            options.locationPathName = buildPath;
+            options.target = BuildTarget.tvOS;
+            options.options = BuildOptions.None;
+
+            var report = UnityEditor.BuildPipeline.BuildPlayer(options);
+            var summary = report.summary;
+
+            if (summary.result == UnityEditor.Build.Reporting.BuildResult.Succeeded)
+            {
+                Debug.Log($"[BuildPipeline] Success! tvOS Xcode project exported to: {buildPath}");
+            }
+            else
+            {
+                Debug.LogError($"[BuildPipeline] Failed! Result: {summary.result}");
+                if (Application.isBatchMode)
+                {
+                    EditorApplication.Exit(1);
+                }
+            }
+        }
     }
 }

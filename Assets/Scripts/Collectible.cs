@@ -5,7 +5,8 @@ namespace TubityWAI
     public enum CollectibleType
     {
         Coin,
-        Powerup
+        Powerup,
+        MagnetPowerup
     }
 
     public class Collectible : MonoBehaviour
@@ -28,6 +29,8 @@ namespace TubityWAI
 
         private Vector3 baseLocalPos;
         private float hoverTimeOffset;
+        private bool isBeingMagnetized = false;
+        private float magnetSpeed = 0f;
 
         private void Start()
         {
@@ -38,6 +41,35 @@ namespace TubityWAI
 
         private void Update()
         {
+            if (type == CollectibleType.Coin && PlayerController.Instance != null && PlayerController.Instance.IsMagnetActive)
+            {
+                Transform targetTransform = PlayerController.Instance.GetMagnetTarget(this.colorIndex);
+                if (targetTransform != null)
+                {
+                    float dist = Vector3.Distance(transform.position, targetTransform.position);
+                    if (dist < 25f)
+                    {
+                        isBeingMagnetized = true;
+                    }
+                }
+            }
+
+            if (isBeingMagnetized && PlayerController.Instance != null)
+            {
+                Transform targetTransform = PlayerController.Instance.GetMagnetTarget(this.colorIndex);
+                if (targetTransform != null)
+                {
+                    magnetSpeed += Time.deltaTime * 60f;
+                    transform.position = Vector3.MoveTowards(transform.position, targetTransform.position, magnetSpeed * Time.deltaTime);
+
+                    if (Vector3.Distance(transform.position, targetTransform.position) < 1.5f)
+                    {
+                        OnCollected(PlayerController.Instance);
+                    }
+                }
+                return; // Skip normal animation
+            }
+
             // 1. Rotate coin around its own axis
             transform.Rotate(Vector3.up * rotationSpeed * Time.deltaTime, Space.Self);
 
@@ -53,9 +85,9 @@ namespace TubityWAI
             PlayerSphere sphere = other.GetComponent<PlayerSphere>();
             if (sphere != null)
             {
-                if (sphere.colorIndex == this.colorIndex)
+                if (this.type == CollectibleType.Powerup || this.type == CollectibleType.MagnetPowerup || isBeingMagnetized || sphere.colorIndex == this.colorIndex)
                 {
-                    Debug.Log($"[Collectible] Coin color match ({colorIndex}) with {other.name}! Collecting...");
+                    Debug.Log($"[Collectible] Collected! Type: {type}.");
                     
                     // Resolve PlayerController from parent hierarchy to update score
                     PlayerController player = null;
@@ -88,7 +120,13 @@ namespace TubityWAI
             }
             else if (type == CollectibleType.Powerup)
             {
-                // Future Powerup logic goes here
+                Debug.Log($"[Collectible] Powerup collected! Activating Invincibility.");
+                player.ActivateInvincibility();
+            }
+            else if (type == CollectibleType.MagnetPowerup)
+            {
+                Debug.Log($"[Collectible] Magnet Powerup collected! Activating Magnet.");
+                player.ActivateMagnet();
             }
 
             // Clean up the collectible object

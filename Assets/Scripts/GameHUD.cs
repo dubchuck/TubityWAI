@@ -13,16 +13,19 @@ namespace TubityWAI
         private Text coinText;
         private Text timeText;
 
-        // Game Over Screen Elements
+        // Powerup UI
+        private GameObject powerupPanel;
+        private Image powerupArc;
+        private Text powerupText;
+        private Outline powerupRim;
+        private Shadow powerupGlow;
+
+        // Game Over & Pause Screen Elements
         private GameObject gameOverPanel;
+        private GameObject pausePanel;
+        public bool IsPaused { get; private set; } = false;
         private Text finalStatsText;
-        private Sprite roundedRectSprite;
         private Font defaultFont;
-        
-        private void Awake()
-        {
-            roundedRectSprite = CreateRoundedRectSprite(128, 128, 24);
-        }
 
         private void Start()
         {
@@ -57,7 +60,7 @@ namespace TubityWAI
             canvasObj.AddComponent<GraphicRaycaster>();
             
             // 2. Create Top HUD Glassmorphic Panel (320x130)
-            GameObject panelObj = CreateGlassmorphicPanel(canvasObj.transform, new Vector2(320f, 130f), new Color(0f, 1f, 1f, 0.85f), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector3(0f, -30f, 0f));
+            GameObject panelObj = GlassUIFactory.CreateGlassmorphicPanel(canvasObj.transform, new Vector2(320f, 130f), new Color(0f, 1f, 1f, 0.85f), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector3(0f, -30f, 0f));
             panelObj.name = "HUDPanel";
             
             // 3. Create SCORE text (Top Row)
@@ -126,7 +129,48 @@ namespace TubityWAI
             timeShadow.effectColor = new Color(0f, 0f, 0f, 0.85f);
             timeShadow.effectDistance = new Vector2(2f, -2f);
 
-            // 6. Create GAME OVER Panel Overlay (disabled by default)
+            // 6. Create POWERUP Panel (Top Right)
+            powerupPanel = GlassUIFactory.CreateGlassmorphicPanel(canvasObj.transform, new Vector2(160f, 160f), new Color(0f, 1f, 1f, 0.85f), new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector3(-20f, -20f, 0f));
+            powerupPanel.name = "PowerupPanel";
+            powerupRim = powerupPanel.GetComponent<Outline>();
+            powerupGlow = powerupPanel.GetComponent<Shadow>();
+
+            GameObject arcObj = new GameObject("PowerupArc");
+            arcObj.transform.SetParent(powerupPanel.transform, false);
+            RectTransform arcRect = arcObj.AddComponent<RectTransform>();
+            arcRect.anchorMin = Vector2.zero;
+            arcRect.anchorMax = Vector2.one;
+            arcRect.sizeDelta = new Vector2(-20f, -20f);
+
+            powerupArc = arcObj.AddComponent<Image>();
+            powerupArc.sprite = GlassUIFactory.GetRingSprite();
+            powerupArc.type = Image.Type.Filled;
+            powerupArc.fillMethod = Image.FillMethod.Radial360;
+            powerupArc.fillOrigin = (int)Image.Origin360.Top;
+            powerupArc.fillClockwise = false;
+            powerupArc.color = new Color(0f, 1f, 1f);
+
+            GameObject puTextObj = new GameObject("PowerupText");
+            puTextObj.transform.SetParent(powerupPanel.transform, false);
+            RectTransform puTextRect = puTextObj.AddComponent<RectTransform>();
+            puTextRect.anchorMin = Vector2.zero;
+            puTextRect.anchorMax = Vector2.one;
+            puTextRect.sizeDelta = Vector2.zero;
+
+            powerupText = puTextObj.AddComponent<Text>();
+            powerupText.font = defaultFont;
+            powerupText.fontSize = 20;
+            powerupText.fontStyle = FontStyle.Bold;
+            powerupText.alignment = TextAnchor.MiddleCenter;
+            powerupText.color = new Color(0f, 1f, 1f);
+            
+            Shadow puShadow = puTextObj.AddComponent<Shadow>();
+            puShadow.effectColor = new Color(0f, 0f, 0f, 0.85f);
+            puShadow.effectDistance = new Vector2(2f, -2f);
+
+            powerupPanel.SetActive(false);
+
+            // 7. Create GAME OVER Panel Overlay (disabled by default)
             gameOverPanel = new GameObject("GameOverPanel");
             gameOverPanel.transform.SetParent(canvasObj.transform, false);
             
@@ -142,7 +186,7 @@ namespace TubityWAI
             goPanelImage.color = new Color(0.02f, 0.01f, 0.04f, 0.88f);
 
             // Centered 5-layer Glassmorphic Game Over Card (480x340)
-            GameObject cardObj = CreateGlassmorphicPanel(gameOverPanel.transform, new Vector2(480f, 340f), new Color(1f, 0f, 0.2f, 0.85f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector3.zero);
+            GameObject cardObj = GlassUIFactory.CreateGlassmorphicPanel(gameOverPanel.transform, new Vector2(480f, 340f), new Color(1f, 0f, 0.2f, 0.85f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector3.zero);
             cardObj.name = "CardPanel";
 
             // Title "GAME OVER"
@@ -191,7 +235,7 @@ namespace TubityWAI
             statsShadow.effectDistance = new Vector2(1.5f, -1.5f);
 
             // --- 1. REPLAY BUTTON (Left) ---
-            GameObject replayBtnObj = CreateGlassmorphicIconButton(cardObj.transform, new Vector2(170f, 55f), new Color(0f, 1f, 0.6f, 0.85f), "REPLAY", Color.white, 18);
+            GameObject replayBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(cardObj.transform, new Vector2(170f, 55f), new Color(0f, 1f, 0.6f, 0.85f), "REPLAY", Color.white, 18);
             replayBtnObj.name = "ReplayButton";
 
             RectTransform replayBtnRect = replayBtnObj.GetComponent<RectTransform>();
@@ -209,7 +253,7 @@ namespace TubityWAI
             });
 
             // --- 2. MENU BUTTON (Right) ---
-            GameObject menuBtnObj = CreateGlassmorphicIconButton(cardObj.transform, new Vector2(170f, 55f), new Color(1f, 0f, 0.3f, 0.85f), "MAIN MENU", Color.white, 18);
+            GameObject menuBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(cardObj.transform, new Vector2(170f, 55f), new Color(1f, 0f, 0.3f, 0.85f), "MAIN MENU", Color.white, 18);
             menuBtnObj.name = "MenuButton";
 
             RectTransform menuBtnRect = menuBtnObj.GetComponent<RectTransform>();
@@ -228,148 +272,96 @@ namespace TubityWAI
 
             // Keep the Game Over Screen hidden initially
             gameOverPanel.SetActive(false);
-        }
 
-        private GameObject CreateGlassmorphicPanel(Transform parent, Vector2 size, Color neonBorderColor, Vector2 anchorMin, Vector2 anchorMax, Vector2 anchoredPosition)
-        {
-            GameObject panelObj = new GameObject("GlassPanel");
-            panelObj.transform.SetParent(parent, false);
-            RectTransform rect = panelObj.AddComponent<RectTransform>();
-            rect.anchorMin = anchorMin;
-            rect.anchorMax = anchorMax;
-            rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.sizeDelta = size;
-            rect.anchoredPosition = anchoredPosition;
+            // 7. Create PAUSE Panel Overlay (disabled by default)
+            pausePanel = new GameObject("PausePanel");
+            pausePanel.transform.SetParent(canvasObj.transform, false);
 
-            // Layer 1: Base Glass Fill
-            Image bgImg = panelObj.AddComponent<Image>();
-            bgImg.sprite = roundedRectSprite;
-            bgImg.type = Image.Type.Sliced;
-            bgImg.color = new Color(0.04f, 0.02f, 0.08f, 0.95f);
+            RectTransform pPanelRect = pausePanel.AddComponent<RectTransform>();
+            pPanelRect.anchorMin = Vector2.zero;
+            pPanelRect.anchorMax = Vector2.one;
+            pPanelRect.pivot = new Vector2(0.5f, 0.5f);
+            pPanelRect.anchoredPosition = Vector3.zero;
+            pPanelRect.sizeDelta = Vector2.zero;
 
-            // Layer 2: Neon Rim
-            Outline rim = panelObj.AddComponent<Outline>();
-            rim.effectColor = neonBorderColor;
-            rim.effectDistance = new Vector2(2.5f, -2.5f);
+            Image pPanelImage = pausePanel.AddComponent<Image>();
+            pPanelImage.color = new Color(0.02f, 0.01f, 0.04f, 0.88f);
 
-            // Layer 3: Ambient Glow
-            Shadow glowShadow = panelObj.AddComponent<Shadow>();
-            glowShadow.effectColor = new Color(neonBorderColor.r, neonBorderColor.g, neonBorderColor.b, 0.45f);
-            glowShadow.effectDistance = new Vector2(-2f, 2f);
+            GameObject pCardObj = GlassUIFactory.CreateGlassmorphicPanel(pausePanel.transform, new Vector2(440f, 380f), new Color(0f, 1f, 1f, 0.85f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector3.zero);
+            pCardObj.name = "PauseCardPanel";
 
-            // Layer 4: Specular Highlight Overlay (Top gradient reflection)
-            GameObject highlight = new GameObject("GlassHighlight");
-            highlight.transform.SetParent(panelObj.transform, false);
-            RectTransform hlRect = highlight.AddComponent<RectTransform>();
-            hlRect.anchorMin = new Vector2(0.01f, 0.55f);
-            hlRect.anchorMax = new Vector2(0.99f, 0.98f);
-            hlRect.sizeDelta = Vector2.zero;
+            // Title "PAUSED"
+            GameObject pTitleObj = new GameObject("PauseTitleText");
+            pTitleObj.transform.SetParent(pCardObj.transform, false);
 
-            Image hlImg = highlight.AddComponent<Image>();
-            hlImg.sprite = roundedRectSprite;
-            hlImg.type = Image.Type.Sliced;
-            hlImg.color = new Color(1f, 1f, 1f, 0.18f);
+            RectTransform pTitleRect = pTitleObj.AddComponent<RectTransform>();
+            pTitleRect.anchorMin = new Vector2(0f, 0.74f);
+            pTitleRect.anchorMax = new Vector2(1f, 0.98f);
+            pTitleRect.pivot = new Vector2(0.5f, 0.5f);
+            pTitleRect.anchoredPosition = new Vector3(0f, -5f, 0f);
+            pTitleRect.sizeDelta = Vector2.zero;
 
-            return panelObj;
-        }
+            Text pTitleText = pTitleObj.AddComponent<Text>();
+            pTitleText.font = defaultFont;
+            pTitleText.fontSize = 38;
+            pTitleText.fontStyle = FontStyle.Bold;
+            pTitleText.alignment = TextAnchor.MiddleCenter;
+            pTitleText.color = new Color(1f, 0.85f, 0f); // Synthwave Gold
+            pTitleText.text = "PAUSED";
 
-        private GameObject CreateGlassmorphicIconButton(Transform parent, Vector2 size, Color neonBorderColor, string labelText, Color textColor, int fontSize = 18)
-        {
-            GameObject btnObj = new GameObject("GlassIconButton");
-            btnObj.transform.SetParent(parent, false);
-            RectTransform rect = btnObj.AddComponent<RectTransform>();
-            rect.sizeDelta = size;
+            Shadow pTitleShadow = pTitleObj.AddComponent<Shadow>();
+            pTitleShadow.effectColor = new Color(0f, 0f, 0f, 0.9f);
+            pTitleShadow.effectDistance = new Vector2(2.5f, -2.5f);
 
-            // Layer 1: Base Glass Fill
-            Image bgImg = btnObj.AddComponent<Image>();
-            bgImg.sprite = roundedRectSprite;
-            bgImg.type = Image.Type.Sliced;
-            bgImg.color = new Color(0.04f, 0.08f, 0.20f, 0.85f);
+            // 1. RESUME BUTTON
+            GameObject resumeBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(pCardObj.transform, new Vector2(260f, 55f), new Color(0f, 1f, 0.6f, 0.85f), "RESUME", Color.white, 20);
+            resumeBtnObj.name = "ResumeButton";
+            RectTransform resumeBtnRect = resumeBtnObj.GetComponent<RectTransform>();
+            resumeBtnRect.anchorMin = new Vector2(0.5f, 0.56f);
+            resumeBtnRect.anchorMax = new Vector2(0.5f, 0.56f);
+            resumeBtnRect.pivot = new Vector2(0.5f, 0.5f);
+            resumeBtnRect.anchoredPosition = Vector3.zero;
+            resumeBtnObj.GetComponent<Button>().onClick.AddListener(TogglePauseMenu);
 
-            // Layer 2: Neon Rim
-            Outline rim = btnObj.AddComponent<Outline>();
-            rim.effectColor = neonBorderColor;
-            rim.effectDistance = new Vector2(2.5f, -2.5f);
-
-            // Layer 3: Ambient Glow
-            Shadow glowShadow = btnObj.AddComponent<Shadow>();
-            glowShadow.effectColor = new Color(neonBorderColor.r, neonBorderColor.g, neonBorderColor.b, 0.45f);
-            glowShadow.effectDistance = new Vector2(-2f, 2f);
-
-            // Layer 4: Specular Highlight Overlay
-            GameObject highlight = new GameObject("GlassHighlight");
-            highlight.transform.SetParent(btnObj.transform, false);
-            RectTransform hlRect = highlight.AddComponent<RectTransform>();
-            hlRect.anchorMin = new Vector2(0.02f, 0.50f);
-            hlRect.anchorMax = new Vector2(0.98f, 0.96f);
-            hlRect.sizeDelta = Vector2.zero;
-
-            Image hlImg = highlight.AddComponent<Image>();
-            hlImg.sprite = roundedRectSprite;
-            hlImg.type = Image.Type.Sliced;
-            hlImg.color = new Color(1f, 1f, 1f, 0.18f);
-
-            // Layer 5: Text / Icon Content
-            if (!string.IsNullOrEmpty(labelText))
+            // 2. REPLAY BUTTON
+            GameObject pReplayBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(pCardObj.transform, new Vector2(260f, 55f), new Color(1f, 0f, 0.6f, 0.85f), "REPLAY", Color.white, 20);
+            pReplayBtnObj.name = "PauseReplayButton";
+            RectTransform pReplayBtnRect = pReplayBtnObj.GetComponent<RectTransform>();
+            pReplayBtnRect.anchorMin = new Vector2(0.5f, 0.36f);
+            pReplayBtnRect.anchorMax = new Vector2(0.5f, 0.36f);
+            pReplayBtnRect.pivot = new Vector2(0.5f, 0.5f);
+            pReplayBtnRect.anchoredPosition = Vector3.zero;
+            pReplayBtnObj.GetComponent<Button>().onClick.AddListener(() =>
             {
-                GameObject textObj = new GameObject("Text");
-                textObj.transform.SetParent(btnObj.transform, false);
-                RectTransform textRect = textObj.AddComponent<RectTransform>();
-                textRect.anchorMin = Vector2.zero;
-                textRect.anchorMax = Vector2.one;
-                textRect.sizeDelta = Vector2.zero;
-
-                Text textVal = textObj.AddComponent<Text>();
-                textVal.font = defaultFont;
-                textVal.fontSize = fontSize;
-                textVal.fontStyle = FontStyle.Bold;
-                textVal.alignment = TextAnchor.MiddleCenter;
-                textVal.color = textColor;
-                textVal.text = labelText;
-
-                Shadow textShadow = textObj.AddComponent<Shadow>();
-                textShadow.effectColor = new Color(0f, 0f, 0f, 0.85f);
-                textShadow.effectDistance = new Vector2(2f, -2f);
-            }
-
-            Button btn = btnObj.AddComponent<Button>();
-            btn.targetGraphic = bgImg;
-
-            ColorBlock cb = btn.colors;
-            cb.normalColor = Color.white;
-            cb.highlightedColor = new Color(1.35f, 1.35f, 1.45f, 1f);
-            cb.pressedColor = new Color(0.7f, 0.7f, 0.8f, 1f);
-            cb.selectedColor = Color.white;
-            cb.fadeDuration = 0.1f;
-            btn.colors = cb;
-
-            return btnObj;
-        }
-
-        private Sprite CreateRoundedRectSprite(int width = 128, int height = 128, int cornerRadius = 24)
-        {
-            Texture2D tex = new Texture2D(width, height, TextureFormat.RGBA32, false);
-            Color[] pixels = new Color[width * height];
-
-            float r = cornerRadius;
-            for (int y = 0; y < height; y++)
-            {
-                for (int x = 0; x < width; x++)
+                Time.timeScale = 1f;
+                IsPaused = false;
+                if (GameManager.Instance != null)
                 {
-                    float cx = (x < r) ? r - x : (x > width - 1 - r) ? x - (width - 1 - r) : 0f;
-                    float cy = (y < r) ? r - y : (y > height - 1 - r) ? y - (height - 1 - r) : 0f;
-                    float dist = Mathf.Sqrt(cx * cx + cy * cy);
-
-                    float alpha = Mathf.Clamp01(r - dist + 0.5f);
-                    pixels[y * width + x] = new Color(1f, 1f, 1f, alpha);
+                    GameManager.Instance.TriggerReplay();
                 }
-            }
+            });
 
-            tex.SetPixels(pixels);
-            tex.Apply();
-            Vector4 border = new Vector4(r, r, r, r);
-            return Sprite.Create(tex, new Rect(0, 0, width, height), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect, border);
+            // 3. MAIN MENU BUTTON
+            GameObject pMenuBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(pCardObj.transform, new Vector2(260f, 55f), new Color(1f, 0f, 0.3f, 0.85f), "MAIN MENU", Color.white, 20);
+            pMenuBtnObj.name = "PauseMenuButton";
+            RectTransform pMenuBtnRect = pMenuBtnObj.GetComponent<RectTransform>();
+            pMenuBtnRect.anchorMin = new Vector2(0.5f, 0.16f);
+            pMenuBtnRect.anchorMax = new Vector2(0.5f, 0.16f);
+            pMenuBtnRect.pivot = new Vector2(0.5f, 0.5f);
+            pMenuBtnRect.anchoredPosition = Vector3.zero;
+            pMenuBtnObj.GetComponent<Button>().onClick.AddListener(() =>
+            {
+                Time.timeScale = 1f;
+                IsPaused = false;
+                if (GameManager.Instance != null)
+                {
+                    GameManager.Instance.ReturnToMainMenu();
+                }
+            });
+
+            pausePanel.SetActive(false);
         }
+
 
         private void CreateEventSystem()
         {
@@ -385,6 +377,27 @@ namespace TubityWAI
             }
         }
 
+        public void TogglePauseMenu()
+        {
+            if (GameManager.Instance != null && GameManager.Instance.IsGameOver) return;
+
+            IsPaused = !IsPaused;
+            Time.timeScale = IsPaused ? 0f : 1f;
+
+            if (pausePanel != null)
+            {
+                pausePanel.SetActive(IsPaused);
+                if (IsPaused && TVOSMenuNavigator.Instance != null)
+                {
+                    Transform resumeBtn = pausePanel.transform.Find("PauseCardPanel/ResumeButton");
+                    if (resumeBtn != null)
+                    {
+                        TVOSMenuNavigator.Instance.SetFocus(resumeBtn.gameObject);
+                    }
+                }
+            }
+        }
+
         public void ShowGameOverScreen()
         {
             if (gameOverPanel == null) return;
@@ -396,6 +409,15 @@ namespace TubityWAI
             }
 
             gameOverPanel.SetActive(true);
+
+            if (TVOSMenuNavigator.Instance != null)
+            {
+                Transform replayBtn = gameOverPanel.transform.Find("CardPanel/ReplayButton");
+                if (replayBtn != null)
+                {
+                    TVOSMenuNavigator.Instance.SetFocus(replayBtn.gameObject);
+                }
+            }
         }
         
         private void Update()
@@ -415,6 +437,38 @@ namespace TubityWAI
             int minutes = Mathf.FloorToInt(player.TimeElapsed / 60f);
             int seconds = Mathf.FloorToInt(player.TimeElapsed % 60f);
             timeText.text = string.Format("TIME: {0:00}:{1:00}", minutes, seconds);
+
+            // Update Powerup Arc UI
+            if (player.IsInvincible)
+            {
+                if (!powerupPanel.activeSelf) powerupPanel.SetActive(true);
+                
+                Color cyan = new Color(0f, 1f, 1f);
+                powerupText.text = "INVINCIBLE";
+                powerupText.color = cyan;
+                powerupArc.color = cyan;
+                if (powerupRim != null) powerupRim.effectColor = cyan;
+                if (powerupGlow != null) powerupGlow.effectColor = new Color(cyan.r, cyan.g, cyan.b, 0.45f);
+
+                powerupArc.fillAmount = player.InvincibilityTimeRemaining / player.InvincibilityTotalTime;
+            }
+            else if (player.IsMagnetActive)
+            {
+                if (!powerupPanel.activeSelf) powerupPanel.SetActive(true);
+                
+                Color purple = new Color(0.8f, 0.2f, 1f);
+                powerupText.text = "MAGNET";
+                powerupText.color = purple;
+                powerupArc.color = purple;
+                if (powerupRim != null) powerupRim.effectColor = purple;
+                if (powerupGlow != null) powerupGlow.effectColor = new Color(purple.r, purple.g, purple.b, 0.45f);
+
+                powerupArc.fillAmount = player.MagnetTimeRemaining / player.MagnetTotalTime;
+            }
+            else
+            {
+                if (powerupPanel.activeSelf) powerupPanel.SetActive(false);
+            }
         }
     }
 }

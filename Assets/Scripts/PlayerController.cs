@@ -66,6 +66,33 @@ namespace TubityWAI
         public int Coins { get; private set; }
         public float TimeElapsed { get; private set; }
 
+        public static PlayerController Instance { get; private set; }
+
+        [Header("Powerup Settings")]
+        [HideInInspector]
+        public float invincibilitySpeedMultiplier = 3.5f;
+        public bool IsInvincible { get; private set; } = false;
+        
+        // Expose a normalized value (0.0 to 1.0) for the camera and UI to use for effects
+        public float InvincibilityEffectStrength { get; private set; } = 0f;
+
+        public bool IsMagnetActive { get; private set; } = false;
+        private float magnetTimer = 0f;
+        private const float MAGNET_DURATION = 10f;
+        
+        public float MagnetTimeRemaining => magnetTimer;
+        public float MagnetTotalTime => MAGNET_DURATION;
+
+        private float invincibilityTimer = 0f;
+        private float reacclimationTimer = 0f;
+        private bool isReacclimating = false;
+        private const float INVINCIBILITY_DURATION = 5f;
+        private const float REACCLIMATION_DURATION = 0.5f;
+
+        public float InvincibilityTimeRemaining => invincibilityTimer + reacclimationTimer;
+        public float InvincibilityTotalTime => INVINCIBILITY_DURATION + REACCLIMATION_DURATION;
+
+
         // The current angle (theta) around the cylinder axis in radians.
         [HideInInspector]
         public float currentAngle = 0f;
@@ -100,6 +127,24 @@ namespace TubityWAI
             public Vector3 baseScale;
         }
         private List<SphereInfo> childSpheres = new List<SphereInfo>();
+        private ParticleSystem speedLinesPS;
+        private AudioSource audioSource;
+
+        private void Awake()
+        {
+            if (Instance == null)
+            {
+                Instance = this;
+            }
+        }
+
+        private void OnDestroy()
+        {
+            if (Instance == this)
+            {
+                Instance = null;
+            }
+        }
 
         private void Start()
         {
@@ -108,6 +153,11 @@ namespace TubityWAI
             Score = 0;
             Coins = 0;
             TimeElapsed = 0f;
+            
+            audioSource = gameObject.AddComponent<AudioSource>();
+            audioSource.playOnAwake = false;
+            audioSource.spatialBlend = 0f; // 2D sound
+            audioSource.volume = 0.8f;
 
             // Discover and register all child spheres dynamically
             childSpheres.Clear();
@@ -128,15 +178,70 @@ namespace TubityWAI
                         {
                             info.baseEmissionColor = info.material.GetColor("_EmissionColor");
                         }
+                        else if (info.material.HasProperty("_Color"))
+                        {
+                            info.baseEmissionColor = info.material.GetColor("_Color");
+                        }
                         childSpheres.Add(info);
                     }
                 }
+            }
+            
+            // Setup Speed Lines Particle System
+            GameObject speedLinesObj = new GameObject("SpeedLines");
+            speedLinesObj.transform.SetParent(this.transform, false);
+            speedLinesObj.transform.localPosition = new Vector3(0, 0, 80f);
+            speedLinesObj.transform.localRotation = Quaternion.Euler(0, 180, 0); // Emit towards the camera
+            
+            speedLinesPS = speedLinesObj.AddComponent<ParticleSystem>();
+            var main = speedLinesPS.main;
+            main.duration = 1f;
+            main.loop = true;
+            main.startLifetime = 1.5f;
+            main.startSpeed = 120f; // Very fast particles
+            main.startSize = 0.4f;
+            main.startColor = new Color(1f, 1f, 1f, 0.7f);
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+
+            var emission = speedLinesPS.emission;
+            emission.rateOverTime = 0f; // Controlled dynamically
+
+            var shape = speedLinesPS.shape;
+            shape.shapeType = ParticleSystemShapeType.Cone;
+            shape.angle = 12f;
+            shape.radius = radius * 1.8f;
+            
+            var renderer = speedLinesPS.GetComponent<ParticleSystemRenderer>();
+            renderer.renderMode = ParticleSystemRenderMode.Stretch;
+            renderer.cameraVelocityScale = 0f;
+            renderer.velocityScale = 0.05f;
+            renderer.lengthScale = 6.0f;
+            
+            // Basic unlit line material
+            Shader s = Shader.Find("Sprites/Default");
+            if (s != null)
+            {
+                Material lineMat = new Material(s);
+                lineMat.color = new Color(0.2f, 1f, 1f, 0.6f);
+                renderer.material = lineMat;
             }
         }
 
         public void AddCoin()
         {
             Coins++;
+            if (audioSource != null)
+            {
+                audioSource.PlayOneShot(ProceduralAudio.GetCoinSound());
+            }
+        }
+
+        public void PlaySound(AudioClip clip)
+        {
+            if (audioSource != null && clip != null)
+            {
+                audioSource.PlayOneShot(clip);
+            }
         }
 
         public void AddScore(int points)
@@ -144,11 +249,51 @@ namespace TubityWAI
             Score += points;
         }
 
+        public void ActivateInvincibility()
+        {
+            IsInvincible = true;
+            invincibilityTimer = INVINCIBILITY_DURATION;
+            reacclimationTimer = REACCLIMATION_DURATION;
+            isReacclimating = false;
+            PlaySound(ProceduralAudio.GetSpeedUpSound());
+        }
+
+        public void ActivateMagnet()
+        {
+            if (!IsMagnetActive)
+            {
+                PlaySound(ProceduralAudio.GetMagnetOnSound());
+            }
+            IsMagnetActive = true;
+            magnetTimer = MAGNET_DURATION;
+        }
+
+        public Transform GetMagnetTarget(int targetColorIndex)
+        {
+            if (childSpheres == null || childSpheres.Count == 0) return transform;
+            
+            if (targetColorIndex == -1) return childSpheres[0].transform;
+
+            foreach (var info in childSpheres)
+            {
+                PlayerSphere ps = info.transform.GetComponent<PlayerSphere>();
+                if (ps != null && ps.colorIndex == targetColorIndex)
+                {
+                    return info.transform;
+                }
+            }
+            
+            return childSpheres[0].transform;
+        }
+
         private void Update()
         {
-            // 1. Handle keyboard inputs (supporting both steering and speed boost)
+            // 1. Handle steering & speed boost inputs (Keyboard + Gamepad/tvOS D-Pad)
             float steerInput = 0f;
             bool isDownPressed = false;
+            bool spacePressed = false;
+            bool menuPressed = false;
+
             if (Keyboard.current != null)
             {
                 if (Keyboard.current.leftArrowKey.isPressed || Keyboard.current.aKey.isPressed)
@@ -161,17 +306,63 @@ namespace TubityWAI
                 }
 
                 isDownPressed = Keyboard.current.downArrowKey.isPressed || Keyboard.current.sKey.isPressed;
+                spacePressed = Keyboard.current.spaceKey.wasPressedThisFrame || Keyboard.current.upArrowKey.wasPressedThisFrame || Keyboard.current.wKey.wasPressedThisFrame;
+                menuPressed = Keyboard.current.escapeKey.wasPressedThisFrame;
+
+                if (Keyboard.current.pKey.wasPressedThisFrame)
+                {
+                    ActivateInvincibility();
+                }
+
+                if (Keyboard.current.mKey.wasPressedThisFrame)
+                {
+                    ActivateMagnet();
+                }
             }
 
-            // 2. Handle Space jump inputs
-            bool spacePressed = false;
-            if (Keyboard.current != null)
+            if (Gamepad.current != null)
             {
-                spacePressed = Keyboard.current.spaceKey.wasPressedThisFrame;
+                // Left / Right steer
+                if (Gamepad.current.dpad.left.isPressed || Gamepad.current.leftStick.x.ReadValue() < -0.3f)
+                {
+                    steerInput = -1f;
+                }
+                else if (Gamepad.current.dpad.right.isPressed || Gamepad.current.leftStick.x.ReadValue() > 0.3f)
+                {
+                    steerInput = 1f;
+                }
+
+                // Down speed boost
+                if (Gamepad.current.dpad.down.isPressed || Gamepad.current.leftStick.y.ReadValue() < -0.5f)
+                {
+                    isDownPressed = true;
+                }
+
+                // Up / ButtonSouth Jump
+                if (Gamepad.current.dpad.up.wasPressedThisFrame || Gamepad.current.buttonSouth.wasPressedThisFrame || Gamepad.current.leftStick.y.ReadValue() > 0.5f)
+                {
+                    spacePressed = true;
+                }
+
+                // Menu / Pause toggle
+                if (Gamepad.current.selectButton.wasPressedThisFrame || Gamepad.current.startButton.wasPressedThisFrame || Gamepad.current.buttonEast.wasPressedThisFrame)
+                {
+                    menuPressed = true;
+                }
             }
 
-            // 3. Process mobile touch & editor mouse inputs
+            // 2. Process mobile touch & editor mouse inputs
             ProcessTouchAndMouseInputs(ref steerInput, ref spacePressed);
+
+            // 3. Handle Menu / Pause Toggle
+            if (menuPressed && GameManager.Instance != null && !GameManager.Instance.IsGameOver)
+            {
+                GameHUD hud = FindFirstObjectByType<GameHUD>();
+                if (hud != null)
+                {
+                    hud.TogglePauseMenu();
+                }
+            }
 
 
             // 3. Apply steering (independent in-air and on-ground steering)
@@ -192,7 +383,55 @@ namespace TubityWAI
 
             // Update forward movement and time elapsed
             TimeElapsed += Time.deltaTime;
-            float activeSpeed = forwardSpeed * (isDownPressed ? speedBoostMultiplier : 1f);
+            
+            // Powerup state machine
+            float currentInvincibilityBoost = 1f;
+            if (invincibilityTimer > 0f)
+            {
+                invincibilityTimer -= Time.deltaTime;
+                currentInvincibilityBoost = invincibilitySpeedMultiplier;
+                // Soft lerp in the strength so the camera smoothly tracks it over ~0.25s
+                InvincibilityEffectStrength = Mathf.Min(1f, InvincibilityEffectStrength + Time.deltaTime * 4f);
+            }
+            else if (reacclimationTimer > 0f)
+            {
+                if (!isReacclimating)
+                {
+                    isReacclimating = true;
+                    PlaySound(ProceduralAudio.GetSpeedDownSound());
+                }
+                reacclimationTimer -= Time.deltaTime;
+                float t = reacclimationTimer / REACCLIMATION_DURATION; // Goes from 1 to 0
+                currentInvincibilityBoost = Mathf.Lerp(1f, invincibilitySpeedMultiplier, t);
+                InvincibilityEffectStrength = t;
+            }
+            else
+            {
+                IsInvincible = false;
+                InvincibilityEffectStrength = 0f;
+            }
+
+            if (magnetTimer > 0f)
+            {
+                magnetTimer -= Time.deltaTime;
+            }
+            else
+            {
+                if (IsMagnetActive)
+                {
+                    PlaySound(ProceduralAudio.GetMagnetOffSound());
+                    IsMagnetActive = false;
+                }
+            }
+
+            if (speedLinesPS != null)
+            {
+                var em = speedLinesPS.emission;
+                // Fade speed lines emission based on strength
+                em.rateOverTime = 200f * InvincibilityEffectStrength;
+            }
+
+            float activeSpeed = forwardSpeed * (isDownPressed ? speedBoostMultiplier : 1f) * currentInvincibilityBoost;
             zPos += activeSpeed * Time.deltaTime;
 
             // Get the curve offset at the current zPos
@@ -227,12 +466,14 @@ namespace TubityWAI
                     jumpStartAngle = currentAngle;
                     jumpTargetAngle = currentAngle;
                     hasCrossedOver = false;
+                    PlaySound(ProceduralAudio.GetJumpSound());
                 }
                 else if (!hasCrossedOver)
                 {
                     // Double press space to initiate crossover to the opposite side
                     jumpTargetAngle = jumpStartAngle + Mathf.PI;
                     hasCrossedOver = true;
+                    PlaySound(ProceduralAudio.GetDoubleJumpSound());
                 }
             }
 

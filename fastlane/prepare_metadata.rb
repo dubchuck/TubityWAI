@@ -1,9 +1,10 @@
 require 'json'
 require 'fileutils'
 
-# Locate directories
 FASTLANE_DIR = File.expand_path(File.dirname(__FILE__))
-CONFIG_FILE = File.join(FASTLANE_DIR, 'app_store_config.json')
+CERTS_DIR = File.expand_path('~/.dubchuck_certs')
+CERTS_CONFIG = File.join(CERTS_DIR, 'app_store_config.json')
+CONFIG_FILE = File.exist?(CERTS_CONFIG) ? CERTS_CONFIG : File.join(FASTLANE_DIR, 'app_store_config.json')
 METADATA_DIR = File.join(FASTLANE_DIR, 'metadata')
 SCREENSHOTS_DIR = File.join(FASTLANE_DIR, 'screenshots')
 
@@ -16,7 +17,7 @@ unless File.exist?(CONFIG_FILE)
   exit 1
 end
 
-config = JSON.parse(File.read(CONFIG_FILE))
+config = JSON.parse(File.read(CONFIG_FILE, encoding: 'utf-8'))
 
 # Helper to find ImageMagick command
 def find_convert_cmd
@@ -77,9 +78,6 @@ unless File.directory?(source_dir)
 end
 
 locales.keys.each do |locale|
-  locale_screenshot_dir = File.join(SCREENSHOTS_DIR, locale)
-  FileUtils.mkdir_p(locale_screenshot_dir)
-  
   files.each_with_index do |file_info, index|
     source_file = File.join(source_dir, file_info['source'])
     unless File.exist?(source_file)
@@ -93,13 +91,25 @@ locales.keys.each do |locale|
       width = target['width']
       height = target['height']
       
-      # Determine name structure: Fastlane deliver expects structure like:
-      # screenshots/<locale>/<device>_<index>.png
-      # Example: screenshots/en-US/iPhone14ProMax_1.png
-      target_filename = "#{device}_#{index + 1}.png"
-      target_path = File.join(locale_screenshot_dir, target_filename)
+      platform_subfolder = case device.downcase
+                           when 'desktop', 'mac' then 'mac'
+                           when 'appletv', 'tvos' then 'tvos'
+                           else 'ios'
+                           end
+
+      filename_prefix = case device.downcase
+                        when 'desktop', 'mac' then 'Desktop'
+                        when 'appletv', 'tvos' then 'AppleTV'
+                        else device
+                        end
+
+      target_dir = File.join(SCREENSHOTS_DIR, platform_subfolder, locale)
+      FileUtils.mkdir_p(target_dir)
       
-      puts "  - Generating #{target_filename} (#{width}x#{height}) for #{locale}"
+      target_filename = "#{filename_prefix}_#{index + 1}.png"
+      target_path = File.join(target_dir, target_filename)
+      
+      puts "  - Generating [#{platform_subfolder}] #{target_filename} (#{width}x#{height}) for #{locale}"
       
       # Use convert to resize and force aspect ratio
       cmd = "#{CONVERT_CMD} '#{source_file}' -resize #{width}x#{height}! '#{target_path}'"
