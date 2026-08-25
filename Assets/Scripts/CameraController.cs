@@ -23,6 +23,15 @@ namespace TubityWAI
 
         private Camera cam;
 
+        private float jitterTimer = 0f;
+        private float jitterMagnitude = 0f;
+
+        public void TriggerJitter(float duration, float magnitude)
+        {
+            jitterTimer = duration;
+            jitterMagnitude = magnitude;
+        }
+
         private void Awake()
         {
             cam = GetComponent<Camera>();
@@ -94,6 +103,13 @@ namespace TubityWAI
             {
                 float targetFOV = Mathf.Lerp(defaultFOV, invincibilityFOV, target.InvincibilityEffectStrength);
                 cam.fieldOfView = Mathf.Lerp(cam.fieldOfView, targetFOV, Time.deltaTime * 8f);
+            }
+
+            // Apply Jitter Effect
+            if (jitterTimer > 0)
+            {
+                transform.position += Random.insideUnitSphere * jitterMagnitude;
+                jitterTimer -= Time.deltaTime;
             }
         }
     }

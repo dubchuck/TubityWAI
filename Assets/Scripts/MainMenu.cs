@@ -9,10 +9,10 @@ namespace TubityWAI
     public class MainMenu : MonoBehaviour
     {
         [Header("Menu Styling")]
-        public Color panelBackgroundColor = new Color(0.04f, 0.02f, 0.08f, 0.95f);
-        public Color borderNeonColor = new Color(0f, 1f, 1f, 0.85f); // Neon Cyan
-        public Color neonMagentaColor = new Color(1f, 0f, 0.6f, 0.85f); // Neon Pink/Magenta
-        public Color textGoldColor = new Color(1f, 0.85f, 0f);      // Neon Gold/Yellow
+        public Color panelBackgroundColor = new Color(0.02f, 0.05f, 0.12f, 0.95f); // Darker, less purple background
+        public Color borderNeonColor = new Color(0f, 1f, 1f, 0.4f); // Subtle Cyan
+        public Color neonMagentaColor = new Color(0f, 0.8f, 1f, 0.4f); // Subtle Teal/Cyan instead of magenta
+        public Color textGoldColor = new Color(0.8f, 0.9f, 1f); // Cool white instead of gold
 
         // Visual ball colors for sphere count selection
         private Color[] sphereColors = new Color[5]
@@ -170,6 +170,7 @@ namespace TubityWAI
             testLevelConfigs.Add(new LevelConfig(104, 12f, 0.45f, 1.8f, true, "ISO VIEW TEST", "Isometric View", true, 0.5f, 1.2f, 8.0f, -3.5f));
             testLevelConfigs.Add(new LevelConfig(105, 12f, 0.35f, 1.8f, true, "ISO CURVES TEST", "Curved & Angled", true, 0.5f, 1.2f, 8.0f, -3.5f, true, 0.04f, 3.0f));
             testLevelConfigs.Add(new LevelConfig(106, 14f, 0.35f, 1.8f, true, "CITY FLYBY", "Abstract City", true, 0.5f, 1.2f, 8.0f, -3.5f, true, 0.035f, 4.0f, true, true));
+            testLevelConfigs.Add(new LevelConfig(107, 12f, 0.4f, 1.8f, true, "ADD SPHERE TEST", "Partial Death", false, 0f, 0f, 0f, 0f, false, 0.05f, 2.0f, false, false, true, true));
         }
 
         private void CreateEventSystem()
@@ -226,18 +227,18 @@ namespace TubityWAI
                 Text logoText = logoObj.AddComponent<Text>();
                 logoText.font = defaultFont;
                 logoText.fontSize = 64;
-                logoText.fontStyle = FontStyle.Bold;
+                logoText.fontStyle = FontStyle.Normal;
                 logoText.alignment = TextAnchor.MiddleCenter;
                 logoText.color = textGoldColor;
                 logoText.text = "TUBITYX";
 
                 Shadow logoShadow = logoObj.AddComponent<Shadow>();
-                logoShadow.effectColor = new Color(0f, 0f, 0f, 0.85f);
-                logoShadow.effectDistance = new Vector2(3f, -3f);
+                logoShadow.effectColor = new Color(0f, 0f, 0f, 0.5f);
+                logoShadow.effectDistance = new Vector2(1f, -1f);
 
                 Outline logoGlow = logoObj.AddComponent<Outline>();
                 logoGlow.effectColor = borderNeonColor;
-                logoGlow.effectDistance = new Vector2(1.5f, -1.5f);
+                logoGlow.effectDistance = new Vector2(1f, -1f);
             }
 
             // Create Settings Popup
@@ -254,7 +255,7 @@ namespace TubityWAI
             l1Rect.sizeDelta = Vector2.zero;
 
             // 1. PLAY BUTTON (Bottom Left)
-            GameObject playBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(layer1Obj.transform, new Vector2(280f, 120f), borderNeonColor, "PLAY", borderNeonColor, 50, true);
+            GameObject playBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(layer1Obj.transform, new Vector2(240f, 70f), borderNeonColor, "P L A Y", borderNeonColor, 32, true);
             playBtnObj.name = "NavBtn_Play";
             RectTransform playRect = playBtnObj.GetComponent<RectTransform>();
             playRect.anchorMin = new Vector2(0.05f, 0.08f);
@@ -264,7 +265,7 @@ namespace TubityWAI
             playBtnObj.GetComponent<Button>().onClick.AddListener(ShowSphereSelection3D);
 
             // 2. SETTINGS BUTTON (Bottom Right)
-            GameObject settingsBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(layer1Obj.transform, new Vector2(280f, 120f), borderNeonColor, "\u2699 SETTINGS", borderNeonColor, 40);
+            GameObject settingsBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(layer1Obj.transform, new Vector2(260f, 70f), borderNeonColor, "\u2699  S E T T I N G S", borderNeonColor, 24);
             settingsBtnObj.name = "NavBtn_Settings";
             RectTransform settingsRect = settingsBtnObj.GetComponent<RectTransform>();
             settingsRect.anchorMin = new Vector2(0.95f, 0.08f);
@@ -284,7 +285,7 @@ namespace TubityWAI
             l15Rect.sizeDelta = Vector2.zero;
 
             // Left Arrow
-            GameObject prevSphereBtn = GlassUIFactory.CreateGlassmorphicIconButton(layer15Obj.transform, new Vector2(120f, 120f), borderNeonColor, "\u25C0", Color.white, 40);
+            GameObject prevSphereBtn = GlassUIFactory.CreateGlassmorphicIconButton(layer15Obj.transform, new Vector2(80f, 80f), borderNeonColor, "\u25C0", Color.white, 24);
             prevSphereBtn.name = "PrevSphereButton";
             RectTransform pSphereRect = prevSphereBtn.GetComponent<RectTransform>();
             pSphereRect.anchorMin = new Vector2(0.3f, 0.5f);
@@ -293,7 +294,7 @@ namespace TubityWAI
             prevSphereBtn.GetComponent<Button>().onClick.AddListener(() => ChangeSphereCount(-1));
 
             // Right Arrow
-            GameObject nextSphereBtn = GlassUIFactory.CreateGlassmorphicIconButton(layer15Obj.transform, new Vector2(120f, 120f), borderNeonColor, "\u25B6", Color.white, 40);
+            GameObject nextSphereBtn = GlassUIFactory.CreateGlassmorphicIconButton(layer15Obj.transform, new Vector2(80f, 80f), borderNeonColor, "\u25B6", Color.white, 24);
             nextSphereBtn.name = "NextSphereButton";
             RectTransform nSphereRect = nextSphereBtn.GetComponent<RectTransform>();
             nSphereRect.anchorMin = new Vector2(0.7f, 0.5f);
@@ -304,7 +305,7 @@ namespace TubityWAI
 
 
             // Confirm Button (Bottom Center)
-            GameObject confirmBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(layer15Obj.transform, new Vector2(320f, 100f), neonMagentaColor, "CONFIRM", Color.white, 36, true);
+            GameObject confirmBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(layer15Obj.transform, new Vector2(280f, 70f), neonMagentaColor, "C O N F I R M", Color.white, 28, true);
             confirmBtnObj.name = "ConfirmSphereButton";
             RectTransform confirmRect = confirmBtnObj.GetComponent<RectTransform>();
             confirmRect.anchorMin = new Vector2(0.5f, 0.15f);
@@ -347,14 +348,14 @@ namespace TubityWAI
             sphereIndicatorText = indObj.AddComponent<Text>();
             sphereIndicatorText.font = defaultFont;
             sphereIndicatorText.fontSize = 28;
-            sphereIndicatorText.fontStyle = FontStyle.Bold;
+            sphereIndicatorText.fontStyle = FontStyle.Normal;
             sphereIndicatorText.alignment = TextAnchor.MiddleCenter;
             sphereIndicatorText.color = textGoldColor;
             sphereIndicatorText.text = "SELECT LEVEL";
 
             Shadow indShadow = indObj.AddComponent<Shadow>();
-            indShadow.effectColor = new Color(0f, 0f, 0f, 0.85f);
-            indShadow.effectDistance = new Vector2(2f, -2f);
+            indShadow.effectColor = new Color(0f, 0f, 0f, 0.5f);
+            indShadow.effectDistance = new Vector2(1f, -1f);
 
             // Level Buttons Grid
             GameObject l2GridObj = new GameObject("L2_Grid");
@@ -365,14 +366,14 @@ namespace TubityWAI
             l2GridRect.sizeDelta = Vector2.zero;
 
             GridLayoutGroup l2Grid = l2GridObj.AddComponent<GridLayoutGroup>();
-            l2Grid.cellSize = new Vector2(290f, 135f);
-            l2Grid.spacing = new Vector2(40f, 24f);
+            l2Grid.cellSize = new Vector2(260f, 100f);
+            l2Grid.spacing = new Vector2(50f, 40f);
             l2Grid.childAlignment = TextAnchor.MiddleCenter;
 
             for (int i = 0; i < 6; i++)
             {
                 Color bCol = (i % 2 == 0) ? borderNeonColor : neonMagentaColor;
-                GameObject lvlBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(l2GridObj.transform, new Vector2(290f, 135f), bCol, "", Color.clear);
+                GameObject lvlBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(l2GridObj.transform, new Vector2(260f, 100f), bCol, "", Color.clear);
                 lvlBtnObj.name = "LevelButton_" + i;
 
                 // Level Number
@@ -386,13 +387,13 @@ namespace TubityWAI
                 Text numText = numObj.AddComponent<Text>();
                 numText.font = defaultFont;
                 numText.fontSize = 42;
-                numText.fontStyle = FontStyle.Bold;
+                numText.fontStyle = FontStyle.Normal;
                 numText.alignment = TextAnchor.MiddleCenter;
                 numText.color = textGoldColor;
 
                 Shadow numShadow = numObj.AddComponent<Shadow>();
-                numShadow.effectColor = new Color(0f, 0f, 0f, 0.85f);
-                numShadow.effectDistance = new Vector2(2f, -2f);
+                numShadow.effectColor = new Color(0f, 0f, 0f, 0.5f);
+                numShadow.effectDistance = new Vector2(1f, -1f);
 
                 // Subtitle
                 GameObject subObj = new GameObject("LevelSubText");
@@ -405,13 +406,13 @@ namespace TubityWAI
                 Text subText = subObj.AddComponent<Text>();
                 subText.font = defaultFont;
                 subText.fontSize = 16;
-                subText.fontStyle = FontStyle.Bold;
+                subText.fontStyle = FontStyle.Normal;
                 subText.alignment = TextAnchor.MiddleCenter;
                 subText.color = borderNeonColor;
 
                 Shadow subShadow = subObj.AddComponent<Shadow>();
-                subShadow.effectColor = new Color(0f, 0f, 0f, 0.85f);
-                subShadow.effectDistance = new Vector2(1.5f, -1.5f);
+                subShadow.effectColor = new Color(0f, 0f, 0f, 0.5f);
+                subShadow.effectDistance = new Vector2(1f, -1f);
 
                 levelButtons.Add(lvlBtnObj);
             }
@@ -492,14 +493,14 @@ namespace TubityWAI
             testLevelIndicatorText = l3IndObj.AddComponent<Text>();
             testLevelIndicatorText.font = defaultFont;
             testLevelIndicatorText.fontSize = 28;
-            testLevelIndicatorText.fontStyle = FontStyle.Bold;
+            testLevelIndicatorText.fontStyle = FontStyle.Normal;
             testLevelIndicatorText.alignment = TextAnchor.MiddleCenter;
             testLevelIndicatorText.color = textGoldColor;
             testLevelIndicatorText.text = "SELECT TEST LEVEL";
 
             Shadow l3IndShadow = l3IndObj.AddComponent<Shadow>();
-            l3IndShadow.effectColor = new Color(0f, 0f, 0f, 0.85f);
-            l3IndShadow.effectDistance = new Vector2(2f, -2f);
+            l3IndShadow.effectColor = new Color(0f, 0f, 0f, 0.5f);
+            l3IndShadow.effectDistance = new Vector2(1f, -1f);
 
             // Test Level Grid
             GameObject l3GridObj = new GameObject("L3_Grid");
@@ -510,14 +511,14 @@ namespace TubityWAI
             l3GridRect.sizeDelta = Vector2.zero;
 
             GridLayoutGroup l3Grid = l3GridObj.AddComponent<GridLayoutGroup>();
-            l3Grid.cellSize = new Vector2(290f, 135f);
-            l3Grid.spacing = new Vector2(40f, 24f);
+            l3Grid.cellSize = new Vector2(260f, 100f);
+            l3Grid.spacing = new Vector2(50f, 40f);
             l3Grid.childAlignment = TextAnchor.MiddleCenter;
 
-            for (int i = 0; i < 6; i++)
+            for (int i = 0; i < 8; i++)
             {
                 Color bCol = (i % 2 == 0) ? borderNeonColor : neonMagentaColor;
-                GameObject lvlBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(l3GridObj.transform, new Vector2(290f, 135f), bCol, "", Color.clear);
+                GameObject lvlBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(l3GridObj.transform, new Vector2(260f, 100f), bCol, "", Color.clear);
                 lvlBtnObj.name = "TestLevelButton_" + i;
 
                 // Level Number
@@ -531,13 +532,13 @@ namespace TubityWAI
                 Text numText = numObj.AddComponent<Text>();
                 numText.font = defaultFont;
                 numText.fontSize = 34;
-                numText.fontStyle = FontStyle.Bold;
+                numText.fontStyle = FontStyle.Normal;
                 numText.alignment = TextAnchor.MiddleCenter;
                 numText.color = textGoldColor;
 
                 Shadow numShadow = numObj.AddComponent<Shadow>();
-                numShadow.effectColor = new Color(0f, 0f, 0f, 0.85f);
-                numShadow.effectDistance = new Vector2(2f, -2f);
+                numShadow.effectColor = new Color(0f, 0f, 0f, 0.5f);
+                numShadow.effectDistance = new Vector2(1f, -1f);
 
                 // Subtitle / Title Description
                 GameObject subObj = new GameObject("TestLevelSubText");
@@ -550,13 +551,13 @@ namespace TubityWAI
                 Text subText = subObj.AddComponent<Text>();
                 subText.font = defaultFont;
                 subText.fontSize = 14;
-                subText.fontStyle = FontStyle.Bold;
+                subText.fontStyle = FontStyle.Normal;
                 subText.alignment = TextAnchor.MiddleCenter;
                 subText.color = borderNeonColor;
 
                 Shadow subShadow = subObj.AddComponent<Shadow>();
-                subShadow.effectColor = new Color(0f, 0f, 0f, 0.85f);
-                subShadow.effectDistance = new Vector2(1.5f, -1.5f);
+                subShadow.effectColor = new Color(0f, 0f, 0f, 0.5f);
+                subShadow.effectDistance = new Vector2(1f, -1f);
 
                 testLevelButtons.Add(lvlBtnObj);
             }
@@ -764,7 +765,7 @@ namespace TubityWAI
                 testLevelIndicatorText.text = $"TEST LEVELS ({selectedSphereCount} " + (selectedSphereCount == 1 ? "SPHERE)" : "SPHERES)");
             }
 
-            for (int i = 0; i < 6; i++)
+            for (int i = 0; i < 8; i++)
             {
                 GameObject btnObj = testLevelButtons[i];
                 Button btn = btnObj.GetComponent<Button>();

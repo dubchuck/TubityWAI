@@ -77,13 +77,13 @@ namespace TubityWAI
             scoreText = scoreTextObj.AddComponent<Text>();
             scoreText.font = defaultFont;
             scoreText.fontSize = 20;
-            scoreText.fontStyle = FontStyle.Bold;
+            scoreText.fontStyle = FontStyle.Normal;
             scoreText.alignment = TextAnchor.MiddleCenter;
             scoreText.color = new Color(0f, 1f, 1f); // Neon Cyan
             
             Shadow scoreShadow = scoreTextObj.AddComponent<Shadow>();
-            scoreShadow.effectColor = new Color(0f, 0f, 0f, 0.85f);
-            scoreShadow.effectDistance = new Vector2(2f, -2f);
+            scoreShadow.effectColor = new Color(0f, 0f, 0f, 0.5f);
+            scoreShadow.effectDistance = new Vector2(1f, -1f);
             
             // 4. Create COINS text (Middle Row)
             GameObject coinTextObj = new GameObject("CoinText");
@@ -99,13 +99,13 @@ namespace TubityWAI
             coinText = coinTextObj.AddComponent<Text>();
             coinText.font = defaultFont;
             coinText.fontSize = 20;
-            coinText.fontStyle = FontStyle.Bold;
+            coinText.fontStyle = FontStyle.Normal;
             coinText.alignment = TextAnchor.MiddleCenter;
-            coinText.color = new Color(1f, 0.85f, 0f); // Synthwave Gold
+            coinText.color = new Color(1f, 1f, 1f); // White instead of Gold for minimalist
             
             Shadow coinShadow = coinTextObj.AddComponent<Shadow>();
-            coinShadow.effectColor = new Color(0f, 0f, 0f, 0.85f);
-            coinShadow.effectDistance = new Vector2(2f, -2f);
+            coinShadow.effectColor = new Color(0f, 0f, 0f, 0.5f);
+            coinShadow.effectDistance = new Vector2(1f, -1f);
             
             // 5. Create TIME text (Bottom Row)
             GameObject timeTextObj = new GameObject("TimeText");
@@ -121,13 +121,13 @@ namespace TubityWAI
             timeText = timeTextObj.AddComponent<Text>();
             timeText.font = defaultFont;
             timeText.fontSize = 18;
-            timeText.fontStyle = FontStyle.Bold;
+            timeText.fontStyle = FontStyle.Normal;
             timeText.alignment = TextAnchor.MiddleCenter;
-            timeText.color = new Color(1f, 0.4f, 0f); // Neon Orange
+            timeText.color = new Color(0.8f, 0.9f, 1f); // Cool white instead of orange
             
             Shadow timeShadow = timeTextObj.AddComponent<Shadow>();
-            timeShadow.effectColor = new Color(0f, 0f, 0f, 0.85f);
-            timeShadow.effectDistance = new Vector2(2f, -2f);
+            timeShadow.effectColor = new Color(0f, 0f, 0f, 0.5f);
+            timeShadow.effectDistance = new Vector2(1f, -1f);
 
             // 6. Create POWERUP Panel (Top Right)
             powerupPanel = GlassUIFactory.CreateGlassmorphicPanel(canvasObj.transform, new Vector2(160f, 160f), new Color(0f, 1f, 1f, 0.85f), new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector3(-20f, -20f, 0f));
@@ -160,13 +160,13 @@ namespace TubityWAI
             powerupText = puTextObj.AddComponent<Text>();
             powerupText.font = defaultFont;
             powerupText.fontSize = 20;
-            powerupText.fontStyle = FontStyle.Bold;
+            powerupText.fontStyle = FontStyle.Normal;
             powerupText.alignment = TextAnchor.MiddleCenter;
             powerupText.color = new Color(0f, 1f, 1f);
             
             Shadow puShadow = puTextObj.AddComponent<Shadow>();
-            puShadow.effectColor = new Color(0f, 0f, 0f, 0.85f);
-            puShadow.effectDistance = new Vector2(2f, -2f);
+            puShadow.effectColor = new Color(0f, 0f, 0f, 0.5f);
+            puShadow.effectDistance = new Vector2(1f, -1f);
 
             powerupPanel.SetActive(false);
 
@@ -203,13 +203,13 @@ namespace TubityWAI
             Text titleText = titleObj.AddComponent<Text>();
             titleText.font = defaultFont;
             titleText.fontSize = 40;
-            titleText.fontStyle = FontStyle.Bold;
+            titleText.fontStyle = FontStyle.Normal;
             titleText.alignment = TextAnchor.MiddleCenter;
-            titleText.color = new Color(1f, 0f, 0.2f); // Hazard Hot Pink/Red
-
+            titleText.color = new Color(1f, 0.4f, 0.4f); // Softer red
+            
             Shadow titleShadow = titleObj.AddComponent<Shadow>();
-            titleShadow.effectColor = new Color(0f, 0f, 0f, 0.9f);
-            titleShadow.effectDistance = new Vector2(2.5f, -2.5f);
+            titleShadow.effectColor = new Color(0f, 0f, 0f, 0.5f);
+            titleShadow.effectDistance = new Vector2(1f, -1f);
             titleText.text = "GAME OVER";
 
             // Stats breakdown
@@ -226,13 +226,13 @@ namespace TubityWAI
             finalStatsText = statsObj.AddComponent<Text>();
             finalStatsText.font = defaultFont;
             finalStatsText.fontSize = 20;
-            finalStatsText.fontStyle = FontStyle.Bold;
+            finalStatsText.fontStyle = FontStyle.Normal;
             finalStatsText.alignment = TextAnchor.MiddleCenter;
             finalStatsText.color = new Color(0.9f, 0.9f, 1f);
             
             Shadow statsShadow = statsObj.AddComponent<Shadow>();
-            statsShadow.effectColor = new Color(0f, 0f, 0f, 0.85f);
-            statsShadow.effectDistance = new Vector2(1.5f, -1.5f);
+            statsShadow.effectColor = new Color(0f, 0f, 0f, 0.5f);
+            statsShadow.effectDistance = new Vector2(1f, -1f);
 
             // --- 1. REPLAY BUTTON (Left) ---
             GameObject replayBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(cardObj.transform, new Vector2(170f, 55f), new Color(0f, 1f, 0.6f, 0.85f), "REPLAY", Color.white, 18);
@@ -304,14 +304,14 @@ namespace TubityWAI
             Text pTitleText = pTitleObj.AddComponent<Text>();
             pTitleText.font = defaultFont;
             pTitleText.fontSize = 38;
-            pTitleText.fontStyle = FontStyle.Bold;
+            pTitleText.fontStyle = FontStyle.Normal;
             pTitleText.alignment = TextAnchor.MiddleCenter;
-            pTitleText.color = new Color(1f, 0.85f, 0f); // Synthwave Gold
+            pTitleText.color = new Color(0.8f, 0.9f, 1f); // Cool white
             pTitleText.text = "PAUSED";
-
+            
             Shadow pTitleShadow = pTitleObj.AddComponent<Shadow>();
-            pTitleShadow.effectColor = new Color(0f, 0f, 0f, 0.9f);
-            pTitleShadow.effectDistance = new Vector2(2.5f, -2.5f);
+            pTitleShadow.effectColor = new Color(0f, 0f, 0f, 0.5f);
+            pTitleShadow.effectDistance = new Vector2(1f, -1f);
 
             // 1. RESUME BUTTON
             GameObject resumeBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(pCardObj.transform, new Vector2(260f, 55f), new Color(0f, 1f, 0.6f, 0.85f), "RESUME", Color.white, 20);

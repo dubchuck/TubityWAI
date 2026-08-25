@@ -31,10 +31,14 @@ namespace TubityWAI
         public bool isTransparentTube;
         public bool hasCityFlyby;
 
+        // Custom Mechanics settings
+        public bool allowPartialDeath;
+        public bool spawnAddSpherePowerup;
+
         public LevelConfig(int number, float speed, float obsProb, float boost, bool isTest = false, string name = "", string theme = "",
                            bool customCam = false, float camOffsetX = 0f, float camOffsetY = 0f, float camRotX = 0f, float camRotY = 0f,
                            bool curves = false, float curveFreq = 0.05f, float curveAmp = 2.0f,
-                           bool transparentTube = false, bool cityFlyby = false)
+                           bool transparentTube = false, bool cityFlyby = false, bool partialDeath = false, bool spawnAddSphere = false)
         {
             levelNumber = number;
             forwardSpeed = speed;
@@ -56,6 +60,8 @@ namespace TubityWAI
 
             isTransparentTube = transparentTube;
             hasCityFlyby = cityFlyby;
+            allowPartialDeath = partialDeath;
+            spawnAddSpherePowerup = spawnAddSphere;
         }
 
         public Vector3 GetCurveOffset(float z)

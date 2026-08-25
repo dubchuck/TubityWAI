@@ -54,7 +54,7 @@ namespace TubityWAI
 
         private IEnumerator MorphRoutine(int targetCount)
         {
-            float duration = 0.5f; // half second morph
+            float duration = 0.25f; // quarter second morph for a snappier feel
             float elapsed = 0f;
             
             int startCount = currentCount;

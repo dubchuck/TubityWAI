@@ -42,7 +42,7 @@ namespace TubityWAI
             {
                 int width = 128;
                 int height = 128;
-                int cornerRadius = 24;
+                int cornerRadius = 12; // Minimalist sharper corners
 
                 Texture2D tex = new Texture2D(width, height, TextureFormat.RGBA32, false);
                 Color[] pixels = new Color[width * height];
@@ -115,19 +115,19 @@ namespace TubityWAI
             Image bgImg = panelObj.AddComponent<Image>();
             bgImg.sprite = GetRoundedRectSprite();
             bgImg.type = Image.Type.Sliced;
-            bgImg.color = new Color(0.04f, 0.02f, 0.08f, 0.95f);
+            bgImg.color = new Color(0.02f, 0.05f, 0.12f, 0.70f); // Darker, cleaner glass
 
-            // Layer 2: Neon Rim
+            // Layer 2: Subtle Accent Line
             Outline rim = panelObj.AddComponent<Outline>();
-            rim.effectColor = neonBorderColor;
-            rim.effectDistance = new Vector2(2.5f, -2.5f);
+            rim.effectColor = new Color(neonBorderColor.r, neonBorderColor.g, neonBorderColor.b, 0.4f);
+            rim.effectDistance = new Vector2(1f, -1f); // Thin accent line
 
-            // Layer 3: Ambient Glow
+            // Layer 3: Minimal Ambient Glow
             Shadow glowShadow = panelObj.AddComponent<Shadow>();
-            glowShadow.effectColor = new Color(neonBorderColor.r, neonBorderColor.g, neonBorderColor.b, 0.45f);
-            glowShadow.effectDistance = new Vector2(-2f, 2f);
+            glowShadow.effectColor = new Color(neonBorderColor.r, neonBorderColor.g, neonBorderColor.b, 0.2f);
+            glowShadow.effectDistance = new Vector2(-1f, 1f);
 
-            // Layer 4: Specular Highlight Overlay (Top gradient reflection)
+            // Layer 4: Very faint Specular Highlight
             GameObject highlight = new GameObject("GlassHighlight");
             highlight.transform.SetParent(panelObj.transform, false);
             RectTransform hlRect = highlight.AddComponent<RectTransform>();
@@ -138,7 +138,7 @@ namespace TubityWAI
             Image hlImg = highlight.AddComponent<Image>();
             hlImg.sprite = GetRoundedRectSprite();
             hlImg.type = Image.Type.Sliced;
-            hlImg.color = new Color(1f, 1f, 1f, 0.18f);
+            hlImg.color = new Color(1f, 1f, 1f, 0.05f); // Extremely faint
             hlImg.raycastTarget = false;
 
             return panelObj;
@@ -160,19 +160,19 @@ namespace TubityWAI
             Image bgImg = btnObj.AddComponent<Image>();
             bgImg.sprite = GetRoundedRectSprite();
             bgImg.type = Image.Type.Sliced;
-            bgImg.color = new Color(0.04f, 0.08f, 0.20f, 0.85f); // Deep translucent glass
+            bgImg.color = Color.white;
 
-            // Layer 2: Neon Rim
+            // Layer 2: Subtle Accent Line
             Outline rim = btnObj.AddComponent<Outline>();
-            rim.effectColor = neonBorderColor;
-            rim.effectDistance = new Vector2(2.5f, -2.5f);
+            rim.effectColor = new Color(neonBorderColor.r, neonBorderColor.g, neonBorderColor.b, 0.4f);
+            rim.effectDistance = new Vector2(1f, -1f); // Thin accent line
 
-            // Layer 3: Ambient Glow
+            // Layer 3: Minimal Ambient Glow
             Shadow glowShadow = btnObj.AddComponent<Shadow>();
-            glowShadow.effectColor = new Color(neonBorderColor.r, neonBorderColor.g, neonBorderColor.b, 0.45f);
-            glowShadow.effectDistance = new Vector2(-2f, 2f);
+            glowShadow.effectColor = new Color(neonBorderColor.r, neonBorderColor.g, neonBorderColor.b, 0.2f);
+            glowShadow.effectDistance = new Vector2(-1f, 1f);
 
-            // Layer 4: Specular Highlight Overlay (Top 42% height reflection)
+            // Layer 4: Faint Specular Highlight
             GameObject highlight = new GameObject("GlassHighlight");
             highlight.transform.SetParent(btnObj.transform, false);
             RectTransform hlRect = highlight.AddComponent<RectTransform>();
@@ -183,7 +183,7 @@ namespace TubityWAI
             Image hlImg = highlight.AddComponent<Image>();
             hlImg.sprite = GetRoundedRectSprite();
             hlImg.type = Image.Type.Sliced;
-            hlImg.color = new Color(1f, 1f, 1f, 0.18f);
+            hlImg.color = new Color(1f, 1f, 1f, 0.05f);
             hlImg.raycastTarget = false;
 
             // Layer 5: Icon / Text Content
@@ -197,29 +197,37 @@ namespace TubityWAI
                 iconRect.sizeDelta = Vector2.zero;
 
                 Text iconText = iconObj.AddComponent<Text>();
-                Font defaultFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-                if (defaultFont == null) defaultFont = Resources.GetBuiltinResource<Font>("Arial.ttf");
+                // Try to load a clean sans-serif font for the cyber minimalist look
+                Font customFont = Font.CreateDynamicFontFromOSFont(new string[] { "Helvetica Neue", "Helvetica", "Roboto", "Arial" }, fontSize);
+                if (customFont != null)
+                {
+                    iconText.font = customFont;
+                }
+                else
+                {
+                    Font defaultFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+                    if (defaultFont == null) defaultFont = Resources.GetBuiltinResource<Font>("Arial.ttf");
+                    iconText.font = defaultFont;
+                }
                 
-                iconText.font = defaultFont;
                 iconText.fontSize = fontSize;
-                iconText.fontStyle = FontStyle.Bold;
+                iconText.fontStyle = FontStyle.Normal; // Minimalist normal font
                 iconText.alignment = TextAnchor.MiddleCenter;
                 iconText.color = textColor;
                 iconText.text = labelText;
-
-                Shadow iconShadow = iconObj.AddComponent<Shadow>();
-                iconShadow.effectColor = new Color(0f, 0f, 0f, 0.85f);
-                iconShadow.effectDistance = new Vector2(2f, -2f);
+                
+                // Note: Purposely omitting text Shadow to keep the font thin and crisp, 
+                // which is a staple of the cyber minimalist style.
             }
 
             Button btn = btnObj.AddComponent<Button>();
             btn.targetGraphic = bgImg;
 
             ColorBlock cb = btn.colors;
-            cb.normalColor = Color.white;
-            cb.highlightedColor = new Color(1.35f, 1.35f, 1.45f, 1f);
-            cb.pressedColor = new Color(0.7f, 0.7f, 0.8f, 1f);
-            cb.selectedColor = Color.white;
+            cb.normalColor = new Color(1f, 1f, 1f, 0f); // Completely clear background
+            cb.highlightedColor = new Color(1f, 1f, 1f, 0.1f); // Subtle glass highlight on hover
+            cb.pressedColor = new Color(1f, 1f, 1f, 0.2f);
+            cb.selectedColor = new Color(1f, 1f, 1f, 0f);
             cb.fadeDuration = 0.1f;
             btn.colors = cb;
             

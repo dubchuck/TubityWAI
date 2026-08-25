@@ -288,13 +288,14 @@ namespace TubityWAI
                 }
                 else
                 {
-                    // Color mismatch or standard solid obstacle: trigger Game Over!
+                    // Color mismatch or standard solid obstacle: trigger Game Over or partial death!
                     Debug.Log($"[Obstacle] Crash! Color mismatch. Target index = {targetColorIndex}, Sphere index = {sphere.colorIndex}.");
                     if (player != null)
                     {
-                        player.PlaySound(ProceduralAudio.GetCrashSound());
+                        player.HandleCrash(sphere.transform);
+                        Shatter(sphere.transform);
                     }
-                    if (GameManager.Instance != null)
+                    else if (GameManager.Instance != null)
                     {
                         GameManager.Instance.GameOver();
                     }

@@ -6,7 +6,8 @@ namespace TubityWAI
     {
         Coin,
         Powerup,
-        MagnetPowerup
+        MagnetPowerup,
+        AddSpherePowerup
     }
 
     public class Collectible : MonoBehaviour
@@ -85,7 +86,7 @@ namespace TubityWAI
             PlayerSphere sphere = other.GetComponent<PlayerSphere>();
             if (sphere != null)
             {
-                if (this.type == CollectibleType.Powerup || this.type == CollectibleType.MagnetPowerup || isBeingMagnetized || sphere.colorIndex == this.colorIndex)
+                if (this.type == CollectibleType.Powerup || this.type == CollectibleType.MagnetPowerup || this.type == CollectibleType.AddSpherePowerup || isBeingMagnetized || sphere.colorIndex == this.colorIndex)
                 {
                     Debug.Log($"[Collectible] Collected! Type: {type}.");
                     
@@ -127,6 +128,11 @@ namespace TubityWAI
             {
                 Debug.Log($"[Collectible] Magnet Powerup collected! Activating Magnet.");
                 player.ActivateMagnet();
+            }
+            else if (type == CollectibleType.AddSpherePowerup)
+            {
+                Debug.Log($"[Collectible] Add Sphere Powerup collected! Adding sphere.");
+                player.AddSphere();
             }
 
             // Clean up the collectible object

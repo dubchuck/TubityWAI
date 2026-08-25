@@ -222,14 +222,21 @@ namespace TubityWAI
             // 2. 40% probability to spawn a line of coins in each tunnel segment
             if (spawnCoins && Random.value < 0.4f)
             {
-                // 10% chance for Invincibility, 10% chance for Magnet
+                LevelConfig config = (GameManager.Instance != null) ? GameManager.Instance.currentLevelConfig : null;
+
+                // Powerup chances
                 float powerupRoll = Random.value;
-                if (powerupMaterial != null && powerupRoll < 0.1f)
+                if (config != null && config.spawnAddSpherePowerup && powerupRoll < 0.15f)
+                {
+                    SpawnAddSpherePowerup();
+                    return;
+                }
+                else if (powerupMaterial != null && powerupRoll > 0.15f && powerupRoll < 0.25f)
                 {
                     SpawnSinglePowerup();
                     return;
                 }
-                else if (magnetMaterial != null && powerupRoll < 0.2f)
+                else if (magnetMaterial != null && powerupRoll > 0.25f && powerupRoll < 0.35f)
                 {
                     SpawnSingleMagnet();
                     return;
@@ -254,7 +261,6 @@ namespace TubityWAI
                     float localZ = spacing * (i + 1);
                     float absoluteZ = transform.position.z + localZ;
                     Vector3 curveOffset = Vector3.zero;
-                    LevelConfig config = (GameManager.Instance != null) ? GameManager.Instance.currentLevelConfig : null;
                     if (config != null)
                     {
                         curveOffset = config.GetCurveOffset(absoluteZ);
@@ -394,6 +400,53 @@ namespace TubityWAI
 
             Collectible collectible = magnet.AddComponent<Collectible>();
             collectible.type = CollectibleType.MagnetPowerup;
+            collectible.colorIndex = -1; // Any color can collect
+            collectible.rotationSpeed = 250f;
+            collectible.hoverAmplitude = 0.15f;
+            collectible.hoverSpeed = 5f;
+        }
+
+        private void SpawnAddSpherePowerup()
+        {
+            float angle = Random.Range(0f, 2f * Mathf.PI);
+            float localZ = length * 0.5f; // Spawn in the middle of the segment
+            float absoluteZ = transform.position.z + localZ;
+            Vector3 curveOffset = Vector3.zero;
+            LevelConfig config = (GameManager.Instance != null) ? GameManager.Instance.currentLevelConfig : null;
+            if (config != null)
+            {
+                curveOffset = config.GetCurveOffset(absoluteZ);
+            }
+
+            float spawnRadius = radius - 0.35f;
+
+            GameObject powerup = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            powerup.name = "AddSpherePowerup";
+            powerup.transform.SetParent(this.transform, false);
+
+            float x = Mathf.Sin(angle) * spawnRadius + curveOffset.x;
+            float y = -Mathf.Cos(angle) * spawnRadius + curveOffset.y;
+            powerup.transform.localPosition = new Vector3(x, y, localZ);
+            powerup.transform.localScale = new Vector3(0.7f, 0.7f, 0.7f);
+
+            Collider oldCol = powerup.GetComponent<Collider>();
+            if (oldCol != null)
+            {
+                DestroyImmediate(oldCol);
+            }
+
+            BoxCollider boxCol = powerup.AddComponent<BoxCollider>();
+            boxCol.isTrigger = true;
+            boxCol.size = new Vector3(1.5f, 1.5f, 1.5f);
+
+            MeshRenderer mr = powerup.GetComponent<MeshRenderer>();
+            if (mr != null)
+            {
+                mr.sharedMaterial = powerupMaterial; // Reusing powerup material for now
+            }
+
+            Collectible collectible = powerup.AddComponent<Collectible>();
+            collectible.type = CollectibleType.AddSpherePowerup;
             collectible.colorIndex = -1; // Any color can collect
             collectible.rotationSpeed = 250f;
             collectible.hoverAmplitude = 0.15f;

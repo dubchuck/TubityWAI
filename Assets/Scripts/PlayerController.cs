@@ -119,12 +119,15 @@ namespace TubityWAI
         private bool isRecovering = false;
         private float recoveryTimer = 0f;
 
-        private struct SphereInfo
+        private class SphereInfo
         {
             public Transform transform;
             public Material material;
             public Color baseEmissionColor;
             public Vector3 baseScale;
+            public float currentAngleOffset;
+            public float targetAngleOffset;
+            public float scaleMultiplier = 1f;
         }
         private List<SphereInfo> childSpheres = new List<SphereInfo>();
         private ParticleSystem speedLinesPS;
@@ -186,6 +189,8 @@ namespace TubityWAI
                     }
                 }
             }
+            
+            RecalculateSphereOffsets(true);
             
             // Setup Speed Lines Particle System
             GameObject speedLinesObj = new GameObject("SpeedLines");
@@ -286,8 +291,196 @@ namespace TubityWAI
             return childSpheres[0].transform;
         }
 
+        private void RecalculateSphereOffsets(bool snapToTarget)
+        {
+            int count = childSpheres.Count;
+            for (int i = 0; i < count; i++)
+            {
+                float targetOffset = (i * 2f * Mathf.PI) / count;
+                childSpheres[i].targetAngleOffset = targetOffset;
+                if (snapToTarget)
+                {
+                    childSpheres[i].currentAngleOffset = targetOffset;
+                }
+            }
+        }
+
+        public void AddSphere()
+        {
+            if (childSpheres.Count == 0) return;
+
+            PlaySound(ProceduralAudio.GetAcceptSound());
+
+            // Duplicate the first sphere
+            GameObject original = childSpheres[0].transform.gameObject;
+            GameObject newSphereObj = Instantiate(original, transform);
+            newSphereObj.name = "PlayerSphere_" + childSpheres.Count;
+            
+            PlayerSphere ps = newSphereObj.GetComponent<PlayerSphere>();
+            if (ps != null)
+            {
+                ps.colorIndex = childSpheres.Count % 5; // cycle through colors if needed
+            }
+
+            Renderer r = newSphereObj.GetComponent<Renderer>();
+            SphereInfo info = new SphereInfo();
+            info.transform = newSphereObj.transform;
+            info.material = r.material; // Instantiate material
+            info.baseScale = original.transform.localScale;
+            info.scaleMultiplier = 0f; // Start at 0 for morph-in animation
+
+            // Set color based on index (simulating a palette)
+            Color[] palette = { new Color(1f, 0.4f, 0f), new Color(0f, 1f, 0f), new Color(1f, 0f, 0.5f), new Color(1f, 0.9f, 0f), new Color(0.5f, 0f, 1f) };
+            info.baseEmissionColor = palette[ps.colorIndex];
+            if (info.material.HasProperty("_EmissionColor"))
+                info.material.SetColor("_EmissionColor", info.baseEmissionColor);
+            
+            childSpheres.Add(info);
+
+            // Re-space the spheres, don't snap so they animate to new positions
+            RecalculateSphereOffsets(false);
+            
+            // The new sphere starts at offset 0 (or whatever) and animates in
+            info.currentAngleOffset = info.targetAngleOffset; // It can just start at its target and grow in size
+        }
+
+        public void HandleCrash(Transform crashedSphereTransform)
+        {
+            LevelConfig config = GameManager.Instance != null ? GameManager.Instance.currentLevelConfig : null;
+            bool allowPartial = config != null && config.allowPartialDeath;
+
+            if (allowPartial && childSpheres.Count > 1)
+            {
+                // Find and remove the crashed sphere
+                SphereInfo crashedInfo = null;
+                foreach (var info in childSpheres)
+                {
+                    if (info.transform == crashedSphereTransform)
+                    {
+                        crashedInfo = info;
+                        break;
+                    }
+                }
+
+                if (crashedInfo != null)
+                {
+                    childSpheres.Remove(crashedInfo);
+                    
+                    // Detach from player and animate knockback
+                    GameObject crashedObj = crashedInfo.transform.gameObject;
+                    crashedObj.transform.SetParent(null);
+                    StartCoroutine(AnimateCrashedSphere(crashedObj));
+                    
+                    // Trigger camera jitter
+                    if (Camera.main != null)
+                    {
+                        CameraController camController = Camera.main.GetComponent<CameraController>();
+                        if (camController != null)
+                        {
+                            camController.TriggerJitter(0.3f, 0.5f);
+                        }
+                    }
+                    
+                    PlaySound(ProceduralAudio.GetCrashSound());
+                    
+                    // Rebalance the remaining spheres
+                    RecalculateSphereOffsets(false);
+                    return;
+                }
+            }
+            
+            // Standard Game Over
+            PlaySound(ProceduralAudio.GetCrashSound());
+            if (GameManager.Instance != null)
+            {
+                GameManager.Instance.GameOver();
+            }
+        }
+
+        public void SetSphereCount(int count)
+        {
+            count = Mathf.Clamp(count, 1, 5);
+            if (count == childSpheres.Count) return;
+
+            while (childSpheres.Count < count)
+            {
+                AddSphere();
+            }
+
+            while (childSpheres.Count > count)
+            {
+                SphereInfo info = childSpheres[childSpheres.Count - 1];
+                childSpheres.RemoveAt(childSpheres.Count - 1);
+                
+                GameObject obj = info.transform.gameObject;
+                obj.transform.SetParent(null);
+                StartCoroutine(AnimateRemovedSphere(obj));
+            }
+
+            RecalculateSphereOffsets(false);
+        }
+
+        private System.Collections.IEnumerator AnimateRemovedSphere(GameObject sphereObj)
+        {
+            float duration = 1.0f;
+            float elapsed = 0f;
+            
+            while (elapsed < duration)
+            {
+                if (sphereObj == null) yield break;
+                
+                elapsed += Time.deltaTime;
+                
+                // Fly upwards and shrink
+                sphereObj.transform.position += Vector3.up * 20f * Time.deltaTime;
+                sphereObj.transform.localScale = Vector3.Lerp(sphereObj.transform.localScale, Vector3.zero, Time.deltaTime * 3f);
+                
+                yield return null;
+            }
+            
+            if (sphereObj != null)
+            {
+                Destroy(sphereObj);
+            }
+        }
+
+        private System.Collections.IEnumerator AnimateCrashedSphere(GameObject sphereObj)
+        {
+            float duration = 1.5f;
+            float elapsed = 0f;
+            
+            while (elapsed < duration)
+            {
+                if (sphereObj == null) yield break;
+                
+                elapsed += Time.deltaTime;
+                
+                // Knockback effect: backwards and slightly upwards
+                sphereObj.transform.position += (Vector3.back * 40f + Vector3.up * 15f) * Time.deltaTime;
+                // Add a spin
+                sphereObj.transform.Rotate(new Vector3(720f, 360f, 0f) * Time.deltaTime);
+                
+                // Shrink slightly as it flies away
+                sphereObj.transform.localScale = Vector3.Lerp(sphereObj.transform.localScale, Vector3.zero, Time.deltaTime * 2f);
+                
+                yield return null;
+            }
+            
+            if (sphereObj != null)
+            {
+                Destroy(sphereObj);
+            }
+        }
+
         private void Update()
         {
+            // Handle shortcut keys to set sphere count (1-5)
+            if (Input.GetKeyDown(KeyCode.Alpha1)) SetSphereCount(1);
+            if (Input.GetKeyDown(KeyCode.Alpha2)) SetSphereCount(2);
+            if (Input.GetKeyDown(KeyCode.Alpha3)) SetSphereCount(3);
+            if (Input.GetKeyDown(KeyCode.Alpha4)) SetSphereCount(4);
+            if (Input.GetKeyDown(KeyCode.Alpha5)) SetSphereCount(5);
+
             // 1. Handle steering & speed boost inputs (Keyboard + Gamepad/tvOS D-Pad)
             float steerInput = 0f;
             bool isDownPressed = false;
@@ -625,8 +818,12 @@ namespace TubityWAI
             for (int i = 0; i < count; i++)
             {
                 SphereInfo sphere = childSpheres[i];
-                float angleOffset = (i * 2f * Mathf.PI) / count;
-                float totalAngle = baseAngle + angleOffset;
+                
+                // Smoothly interpolate angle offset and scale for morphing
+                sphere.currentAngleOffset = Mathf.LerpAngle(sphere.currentAngleOffset * Mathf.Rad2Deg, sphere.targetAngleOffset * Mathf.Rad2Deg, Time.deltaTime * 10f) * Mathf.Deg2Rad;
+                sphere.scaleMultiplier = Mathf.Lerp(sphere.scaleMultiplier, 1f, Time.deltaTime * 8f);
+
+                float totalAngle = baseAngle + sphere.currentAngleOffset;
 
                 // Radius calculation accounting for inward jump height
                 float sphereRadius = sphere.baseScale.y * 0.5f;
@@ -643,9 +840,9 @@ namespace TubityWAI
                 radialScale *= pulseScaleMult; // Pulse scales all dimensions
 
                 sphere.transform.localScale = new Vector3(
-                    sphere.baseScale.x * tangentScale,
-                    sphere.baseScale.y * radialScale,
-                    sphere.baseScale.z * tangentScale
+                    sphere.baseScale.x * tangentScale * sphere.scaleMultiplier,
+                    sphere.baseScale.y * radialScale * sphere.scaleMultiplier,
+                    sphere.baseScale.z * tangentScale * sphere.scaleMultiplier
                 );
 
                 // Stand perpendicular to the track wall (even at center)
