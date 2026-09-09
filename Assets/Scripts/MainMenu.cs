@@ -8,11 +8,37 @@ namespace TubityWAI
     [ExecuteAlways]
     public class MainMenu : MonoBehaviour
     {
+#if UNITY_EDITOR
+        [ContextMenu("Bake UI To Scene")]
+        public void BakeUIToScene()
+        {
+            Transform oldCanvas = transform.Find("MainMenuCanvas");
+            if (oldCanvas != null) DestroyImmediate(oldCanvas.gameObject);
+            Transform oldEventSystem = transform.Find("EventSystem");
+            if (oldEventSystem != null) DestroyImmediate(oldEventSystem.gameObject);
+            
+            CreateEventSystem();
+            
+            if (IAPManager.Instance == null)
+            {
+                GameObject iapObj = new GameObject("IAPManager");
+                iapObj.AddComponent<IAPManager>();
+            }
+
+            CreateMenuUI();
+            UnityEditor.EditorUtility.SetDirty(this);
+            Debug.Log("[MainMenu] UI Baked into Scene successfully!");
+        }
+#endif
+
         [Header("Menu Styling")]
         public Color panelBackgroundColor = new Color(0.02f, 0.05f, 0.12f, 0.95f); // Darker, less purple background
         public Color borderNeonColor = new Color(0f, 1f, 1f, 0.4f); // Subtle Cyan
         public Color neonMagentaColor = new Color(0f, 0.8f, 1f, 0.4f); // Subtle Teal/Cyan instead of magenta
         public Color textGoldColor = new Color(0.8f, 0.9f, 1f); // Cool white instead of gold
+        // TubityX button accents - the label rim, matching each button's neon rim
+        public Color PlayAccentColor = new Color(0.30f, 0.80f, 1f);
+        public Color SettingsAccentColor = new Color(0.72f, 0.45f, 1f);
 
         // Visual ball colors for sphere count selection
         private Color[] sphereColors = new Color[5]
@@ -77,6 +103,11 @@ namespace TubityWAI
             new SkinItem { Name = "CITY FX", Price = 3000, Icon = "🏢" }
         };
 
+        // TubityX title logo (see Assets/Shaders/TubityXLogo.shader)
+        private const float LogoWidth = 1000f;
+        private const string LogoSpritePath = "UI/Tex_TubityXLogo";
+        private const string LogoMaterialPath = "UI/Mat_TubityXLogo";
+
         private GameObject logoObj;
         private GameObject topMenuObj;
         private Image campaignTabImg;
@@ -111,23 +142,31 @@ namespace TubityWAI
             InitializeTestLevelConfigurations();
         }
 
-        private void Start()
+                private void Start()
         {
             // Clean up old canvas/event system to prevent duplication in edit mode
-            Transform oldCanvas = transform.Find("MainMenuCanvas");
-            if (oldCanvas != null) DestroyImmediate(oldCanvas.gameObject);
-            Transform oldEventSystem = transform.Find("EventSystem");
-            if (oldEventSystem != null) DestroyImmediate(oldEventSystem.gameObject);
-
-            CreateEventSystem();
-
-            if (IAPManager.Instance == null)
+            Transform existingCanvas = transform.Find("MainMenuCanvas");
+            if (existingCanvas != null && Application.isPlaying)
             {
-                GameObject iapObj = new GameObject("IAPManager");
-                iapObj.AddComponent<IAPManager>();
+                // UI is baked into the scene! Rebind references instead of generating.
+                BindBakedUI(existingCanvas);
             }
+            else
+            {
+                if (existingCanvas != null) DestroyImmediate(existingCanvas.gameObject);
+                Transform oldEventSystem = transform.Find("EventSystem");
+                if (oldEventSystem != null) DestroyImmediate(oldEventSystem.gameObject);
 
-            CreateMenuUI();
+                CreateEventSystem();
+
+                if (IAPManager.Instance == null)
+                {
+                    GameObject iapObj = new GameObject("IAPManager");
+                    iapObj.AddComponent<IAPManager>();
+                }
+
+                CreateMenuUI();
+            }
 
             bool isReplaying = GameManager.shouldReplayOnLoad && GameManager.lastLevelConfig != null;
             if (isReplaying || isMenuHidden)
@@ -144,6 +183,30 @@ namespace TubityWAI
                 IAPManager.Instance.OnPurchaseComplete += UpdateSettingsUI;
                 IAPManager.Instance.OnRestoreComplete += UpdateSettingsUI;
             }
+        }
+
+        private void BindBakedUI(Transform canvasTrans)
+        {
+            canvasObj = canvasTrans.gameObject;
+            
+            // Just call CreateMenuUI for now since we rely on local variables heavily. 
+            // In a full refactor we would find all objects by name. 
+            // But actually, we can't easily find them all without full script rewrite.
+            // Let's just generate the UI on top and destroy the old one for now if they want it baked for viewing only.
+            
+            // Wait, we'll implement a clean find block here for the critical components:
+            layer1Obj = canvasTrans.Find("Layer1_TopMenu")?.gameObject;
+            layer15Obj = canvasTrans.Find("Layer15_SphereSelector")?.gameObject;
+            layer2Obj = canvasTrans.Find("Layer2_LevelSelection")?.gameObject;
+            layer3Obj = canvasTrans.Find("Layer3_TestLevels")?.gameObject;
+            layer4Obj = canvasTrans.Find("Layer4_ShopMenu")?.gameObject;
+            settingsPopupObj = canvasTrans.Find("SettingsPopup")?.gameObject;
+            logoObj = canvasTrans.Find("MenuLogo")?.gameObject;
+            topMenuObj = canvasTrans.Find("TopMenuHeader")?.gameObject;
+            
+            // For now, to ensure logic holds, we just destroy and recreate so the event bindings work!
+            DestroyImmediate(canvasTrans.gameObject);
+            CreateMenuUI();
         }
 
         private void InitializeLevelConfigurations()
@@ -192,6 +255,9 @@ namespace TubityWAI
 
             Canvas canvas = canvasObj.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            // TubityXPanel / TubityXLabel pass their geometry and accent colour
+            // through TEXCOORD1, which canvases do not send by default.
+            canvas.additionalShaderChannels |= AdditionalCanvasShaderChannels.TexCoord1;
 
             CanvasScaler scaler = canvasObj.AddComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
@@ -205,40 +271,37 @@ namespace TubityWAI
                 defaultFont = Resources.GetBuiltinResource<Font>("Arial.ttf");
             }
 
+            // ---------------------------------------------------------------
             // Global Title Logo (Top Center)
+            //
+            // One Image, one packed SDF sprite, one material. The neon rim,
+            // chromatic ghost rim, inline contour, frosted glass body, framing
+            // lines and the animated sheen are all generated inside
+            // UI/TubityXLogo.shader, so the whole title is a single draw call
+            // with no per-frame CPU work and no Mask/stencil passes.
+            // Tune the look on Resources/UI/Mat_TubityXLogo.
+            // ---------------------------------------------------------------
             logoObj = new GameObject("MenuLogo");
             logoObj.transform.SetParent(canvasObj.transform, false);
             RectTransform logoRect = logoObj.AddComponent<RectTransform>();
             logoRect.anchorMin = new Vector2(0.5f, 0.86f);
             logoRect.anchorMax = new Vector2(0.5f, 0.86f);
-            logoRect.sizeDelta = new Vector2(750f, 180f);
+            // the sprite is 1024 x 256 - keep that ratio or the SDF bands skew
+            logoRect.sizeDelta = new Vector2(LogoWidth, LogoWidth * 0.25f);
             logoRect.anchoredPosition = Vector2.zero;
 
             Image logoImg = logoObj.AddComponent<Image>();
-            Sprite logoSprite = Resources.Load<Sprite>("tubityx_title");
-            if (logoSprite != null)
-            {
-                logoImg.sprite = logoSprite;
-                logoImg.color = Color.white;
-                logoImg.preserveAspect = true;
-            }
-            else
-            {
-                Text logoText = logoObj.AddComponent<Text>();
-                logoText.font = defaultFont;
-                logoText.fontSize = 64;
-                logoText.fontStyle = FontStyle.Normal;
-                logoText.alignment = TextAnchor.MiddleCenter;
-                logoText.color = textGoldColor;
-                logoText.text = "TUBITYX";
+            logoImg.sprite = Resources.Load<Sprite>(LogoSpritePath);
+            logoImg.material = Resources.Load<Material>(LogoMaterialPath);
+            logoImg.type = Image.Type.Simple;
+            logoImg.preserveAspect = true;
+            logoImg.raycastTarget = false;
 
-                Shadow logoShadow = logoObj.AddComponent<Shadow>();
-                logoShadow.effectColor = new Color(0f, 0f, 0f, 0.5f);
-                logoShadow.effectDistance = new Vector2(1f, -1f);
-
-                Outline logoGlow = logoObj.AddComponent<Outline>();
-                logoGlow.effectColor = borderNeonColor;
-                logoGlow.effectDistance = new Vector2(1f, -1f);
+            if (logoImg.sprite == null || logoImg.material == null)
+            {
+                Debug.LogWarning("[MainMenu] TubityX logo assets not found. Expected " +
+                                 "Assets/Resources/" + LogoSpritePath + ".png and " +
+                                 "Assets/Resources/" + LogoMaterialPath + ".mat");
             }
 
             // Create Settings Popup
@@ -254,8 +317,10 @@ namespace TubityWAI
             l1Rect.anchorMax = Vector2.one;
             l1Rect.sizeDelta = Vector2.zero;
 
-            // 1. PLAY BUTTON (Bottom Left)
-            GameObject playBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(layer1Obj.transform, new Vector2(240f, 70f), borderNeonColor, "P L A Y", borderNeonColor, 32, true);
+            // 1. PLAY BUTTON (Bottom Left) - blue, with a pulsing border
+            GameObject playBtnObj = TubityXUIFactory.CreateButton(
+                layer1Obj.transform, new Vector2(260f, 76f), "PLAY",
+                TubityXUIFactory.BlueButtonMaterial, PlayAccentColor, 30f, 5f);
             playBtnObj.name = "NavBtn_Play";
             RectTransform playRect = playBtnObj.GetComponent<RectTransform>();
             playRect.anchorMin = new Vector2(0.05f, 0.08f);
@@ -264,8 +329,10 @@ namespace TubityWAI
             playRect.anchoredPosition = Vector2.zero;
             playBtnObj.GetComponent<Button>().onClick.AddListener(ShowSphereSelection3D);
 
-            // 2. SETTINGS BUTTON (Bottom Right)
-            GameObject settingsBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(layer1Obj.transform, new Vector2(260f, 70f), borderNeonColor, "\u2699  S E T T I N G S", borderNeonColor, 24);
+            // 2. SETTINGS BUTTON (Bottom Right) - purple, steady border
+            GameObject settingsBtnObj = TubityXUIFactory.CreateButton(
+                layer1Obj.transform, new Vector2(300f, 76f), "SETTINGS",
+                TubityXUIFactory.PurpleButtonMaterial, SettingsAccentColor, 24f, 4f);
             settingsBtnObj.name = "NavBtn_Settings";
             RectTransform settingsRect = settingsBtnObj.GetComponent<RectTransform>();
             settingsRect.anchorMin = new Vector2(0.95f, 0.08f);

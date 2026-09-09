@@ -1087,8 +1087,8 @@ namespace TubityWAI
             headlight.range = 25f;
 
             // 5. Setup Rotating Neon Arcs (World Space)
-            // Spawn arcs every 3 units along the track, from Z = 10 to Z = 600 (approx. 200 arcs)
-            for (float z = 10f; z < 600f; z += 3f)
+            // Spawn arcs every 3 units along the track, starting slightly behind the camera
+            for (float z = -30f; z < 600f; z += 3f)
             {
                 GameObject arcObj = new GameObject("NeonArc_" + z);
                 arcObj.transform.SetParent(worldContainer.transform, false);

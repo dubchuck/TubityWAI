@@ -1,0 +1,79 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!21 &2100000
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: Mat_TubityXLogo
+  m_Shader: {fileID: 4800000, guid: ffbde8c93a1a43c3b49d0f6f189d7954, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords: []
+  m_InvalidKeywords: []
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: -1
+  stringTagMap: {}
+  disabledShaderPasses: []
+  m_LockedProperties: 
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs:
+    - _MainTex:
+        m_Texture: {fileID: 2800000, guid: d6d553a4d5834fa2a8b260e56cabaa49, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    m_Ints: []
+    m_Floats:
+    - _BodyAlpha: 0.92
+    - _BodyTint: 0.012
+    - _ColorMask: 15
+    - _CoreWhite: 0.62
+    - _FrameAlpha: 1
+    - _FrameGlow: 0.8
+    - _FrameWhite: 0.35
+    - _GlassAlpha: 0.09
+    - _GlassTopBoost: 0.55
+    - _GlowPower: 2.6
+    - _GlowRange: 26
+    - _GlowStrength: 0.7
+    - _GradEnd: 0.75
+    - _GradStart: 0.66
+    - _HotFalloff: 2.6
+    - _HotStrength: 0.5
+    - _InlineAlpha: 0.85
+    - _InlinePos: 3.25
+    - _InlineW: 1
+    - _InlineWhite: 0.12
+    - _RimStrength: 0.85
+    - _SheenDuty: 0.22
+    - _SheenGlassBoost: 0.7
+    - _SheenPeriod: 6
+    - _SheenSkew: -0.45
+    - _SheenSoft: 0.075
+    - _SheenStrength: 0.45
+    - _SheenWidth: 0.055
+    - _Softness: 1
+    - _Spread: 28
+    - _Stencil: 0
+    - _StencilComp: 8
+    - _StencilOp: 0
+    - _StencilReadMask: 255
+    - _StencilWriteMask: 255
+    - _StrokeIn: 2.15
+    - _StrokeOut: 1.05
+    - _UseUIAlphaClip: 0
+    m_Colors:
+    - _BodyColor: {r: 0.03, g: 0.035, b: 0.075, a: 1}
+    - _Color: {r: 1, g: 1, b: 1, a: 1}
+    - _ColorA: {r: 0.42, g: 0.93, b: 1, a: 1}
+    - _ColorB: {r: 1, g: 0.3, b: 0.86, a: 1}
+    - _GlassColor: {r: 0.62, g: 0.76, b: 0.95, a: 1}
+    - _RimOffset: {r: -1.9, g: 1.9, b: 0, a: 0}
+    - _SheenColor: {r: 1, g: 1, b: 1, a: 1}
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1

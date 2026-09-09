@@ -475,11 +475,14 @@ namespace TubityWAI
         private void Update()
         {
             // Handle shortcut keys to set sphere count (1-5)
-            if (Input.GetKeyDown(KeyCode.Alpha1)) SetSphereCount(1);
-            if (Input.GetKeyDown(KeyCode.Alpha2)) SetSphereCount(2);
-            if (Input.GetKeyDown(KeyCode.Alpha3)) SetSphereCount(3);
-            if (Input.GetKeyDown(KeyCode.Alpha4)) SetSphereCount(4);
-            if (Input.GetKeyDown(KeyCode.Alpha5)) SetSphereCount(5);
+            if (UnityEngine.InputSystem.Keyboard.current != null)
+            {
+                if (UnityEngine.InputSystem.Keyboard.current.digit1Key.wasPressedThisFrame) SetSphereCount(1);
+                if (UnityEngine.InputSystem.Keyboard.current.digit2Key.wasPressedThisFrame) SetSphereCount(2);
+                if (UnityEngine.InputSystem.Keyboard.current.digit3Key.wasPressedThisFrame) SetSphereCount(3);
+                if (UnityEngine.InputSystem.Keyboard.current.digit4Key.wasPressedThisFrame) SetSphereCount(4);
+                if (UnityEngine.InputSystem.Keyboard.current.digit5Key.wasPressedThisFrame) SetSphereCount(5);
+            }
 
             // 1. Handle steering & speed boost inputs (Keyboard + Gamepad/tvOS D-Pad)
             float steerInput = 0f;

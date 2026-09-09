@@ -13,6 +13,10 @@ namespace TubityWAI
         {
             if (cachedCircleSprite == null)
             {
+#if UNITY_EDITOR
+                cachedCircleSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Art/UI/Circle.png");
+                if (cachedCircleSprite != null) return cachedCircleSprite;
+#endif
                 int size = 32;
                 Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
                 Color[] pixels = new Color[size * size];
@@ -40,6 +44,10 @@ namespace TubityWAI
         {
             if (cachedRoundedRectSprite == null)
             {
+#if UNITY_EDITOR
+                cachedRoundedRectSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Art/UI/RoundedRect.png");
+                if (cachedRoundedRectSprite != null) return cachedRoundedRectSprite;
+#endif
                 int width = 128;
                 int height = 128;
                 int cornerRadius = 12; // Minimalist sharper corners
@@ -71,6 +79,10 @@ namespace TubityWAI
         {
             if (cachedRingSprite == null)
             {
+#if UNITY_EDITOR
+                cachedRingSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Art/UI/Ring.png");
+                if (cachedRingSprite != null) return cachedRingSprite;
+#endif
                 int size = 128;
                 float innerR = 50f;
                 float outerR = 62f;
@@ -102,6 +114,27 @@ namespace TubityWAI
 
         public static GameObject CreateGlassmorphicPanel(Transform parent, Vector2 size, Color neonBorderColor, Vector2 anchorMin, Vector2 anchorMax, Vector2 anchoredPosition)
         {
+#if UNITY_EDITOR
+            GameObject prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/UI/GlassPanel.prefab");
+            if (prefab != null)
+            {
+                GameObject inst = UnityEditor.PrefabUtility.InstantiatePrefab(prefab, parent) as GameObject;
+                RectTransform rt = inst.GetComponent<RectTransform>();
+                rt.anchorMin = anchorMin;
+                rt.anchorMax = anchorMax;
+                rt.pivot = new Vector2(0.5f, 0.5f);
+                rt.sizeDelta = size;
+                rt.anchoredPosition = anchoredPosition;
+
+                Outline r = inst.GetComponent<Outline>();
+                if (r != null) { r.effectColor = new Color(neonBorderColor.r, neonBorderColor.g, neonBorderColor.b, 0.4f); }
+                Shadow s = inst.GetComponent<Shadow>();
+                if (s != null) { s.effectColor = new Color(neonBorderColor.r, neonBorderColor.g, neonBorderColor.b, 0.2f); }
+
+                return inst;
+            }
+#endif
+
             GameObject panelObj = new GameObject("GlassPanel");
             panelObj.transform.SetParent(parent, false);
             RectTransform rect = panelObj.AddComponent<RectTransform>();
@@ -151,6 +184,37 @@ namespace TubityWAI
 
         public static GameObject CreateGlassmorphicIconButton(Transform parent, Vector2 size, Color neonBorderColor, string labelText, Color textColor, int fontSize = 56, bool enablePulse = false)
         {
+#if UNITY_EDITOR
+            GameObject prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/UI/GlassIconButton.prefab");
+            if (prefab != null)
+            {
+                GameObject inst = UnityEditor.PrefabUtility.InstantiatePrefab(prefab, parent) as GameObject;
+                RectTransform rt = inst.GetComponent<RectTransform>();
+                rt.sizeDelta = size;
+
+                Outline r = inst.GetComponent<Outline>();
+                if (r != null) { r.effectColor = new Color(neonBorderColor.r, neonBorderColor.g, neonBorderColor.b, 0.4f); }
+                Shadow s = inst.GetComponent<Shadow>();
+                if (s != null) { s.effectColor = new Color(neonBorderColor.r, neonBorderColor.g, neonBorderColor.b, 0.2f); }
+
+                GlassUIButtonFX fxComp = inst.GetComponent<GlassUIButtonFX>();
+                if (fxComp != null) fxComp.enablePulse = enablePulse;
+
+                Transform iconTextTransform = inst.transform.Find("IconText");
+                if (iconTextTransform != null)
+                {
+                    Text t = iconTextTransform.GetComponent<Text>();
+                    if (t != null)
+                    {
+                        t.text = labelText;
+                        t.color = textColor;
+                        t.fontSize = fontSize;
+                    }
+                }
+                return inst;
+            }
+#endif
+
             GameObject btnObj = new GameObject("GlassIconButton");
             btnObj.transform.SetParent(parent, false);
             RectTransform rect = btnObj.AddComponent<RectTransform>();
