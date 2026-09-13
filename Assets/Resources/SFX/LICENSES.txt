@@ -1,0 +1,14 @@
+Sound effect sources for this folder (all cleared for commercial use):
+
+Shapeforms Audio Free Sound Effects — https://shapeforms.itch.io/shapeforms-audio-free-sfx
+  License: royalty-free, commercial use permitted, no credit required.
+  Used for: Coin.wav, Accept.wav, SpeedUp.wav, MagnetOff.wav, Crash.wav
+
+Dustyroom Casual Game Sounds — https://dustyroom.com/free-casual-game-sounds/
+  License: CC0 (public domain).
+  Used for: CoinAlt.wav, Jump.wav, DoubleJump.wav, SpeedDown.wav, MagnetOn.wav, Break.wav
+
+All files were loudness-normalized (~-16 LUFS) and converted to 16-bit/44.1kHz WAV
+for consistency. To swap any sound, replace the file in this folder keeping the
+same filename — ProceduralAudio.cs loads clips by name via Resources.Load and
+falls back to its built-in synthesized tone if a file is missing.

@@ -8,6 +8,8 @@ namespace TubityWAI
         private static Sprite cachedCircleSprite;
         private static Sprite cachedRoundedRectSprite;
         private static Sprite cachedRingSprite;
+        private static Sprite cachedLockSprite;
+        private static Sprite cachedLockOpenSprite;
 
         public static Sprite GetCircleSprite()
         {
@@ -112,196 +114,167 @@ namespace TubityWAI
             return cachedRingSprite;
         }
 
-        public static GameObject CreateGlassmorphicPanel(Transform parent, Vector2 size, Color neonBorderColor, Vector2 anchorMin, Vector2 anchorMax, Vector2 anchoredPosition)
+        /// <summary>
+        /// A padlock silhouette, drawn with the same per-pixel analytic distance
+        /// + antialiasing technique as the sprites above. `open` springs the
+        /// shackle free of the body's right leg, for the "just unlocked"
+        /// celebration; the closed version marks a still-locked sphere-count block.
+        /// </summary>
+        public static Sprite GetLockSprite(bool open = false)
         {
-#if UNITY_EDITOR
-            GameObject prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/UI/GlassPanel.prefab");
-            if (prefab != null)
+            if (open)
             {
-                GameObject inst = UnityEditor.PrefabUtility.InstantiatePrefab(prefab, parent) as GameObject;
-                RectTransform rt = inst.GetComponent<RectTransform>();
-                rt.anchorMin = anchorMin;
-                rt.anchorMax = anchorMax;
-                rt.pivot = new Vector2(0.5f, 0.5f);
-                rt.sizeDelta = size;
-                rt.anchoredPosition = anchoredPosition;
-
-                Outline r = inst.GetComponent<Outline>();
-                if (r != null) { r.effectColor = new Color(neonBorderColor.r, neonBorderColor.g, neonBorderColor.b, 0.4f); }
-                Shadow s = inst.GetComponent<Shadow>();
-                if (s != null) { s.effectColor = new Color(neonBorderColor.r, neonBorderColor.g, neonBorderColor.b, 0.2f); }
-
-                return inst;
+                if (cachedLockOpenSprite == null) cachedLockOpenSprite = BuildLockSprite(true);
+                return cachedLockOpenSprite;
             }
-#endif
-
-            GameObject panelObj = new GameObject("GlassPanel");
-            panelObj.transform.SetParent(parent, false);
-            RectTransform rect = panelObj.AddComponent<RectTransform>();
-            rect.anchorMin = anchorMin;
-            rect.anchorMax = anchorMax;
-            rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.sizeDelta = size;
-            rect.anchoredPosition = anchoredPosition;
-
-            // Layer 1: Base Glass Fill
-            Image bgImg = panelObj.AddComponent<Image>();
-            bgImg.sprite = GetRoundedRectSprite();
-            bgImg.type = Image.Type.Sliced;
-            bgImg.color = new Color(0.02f, 0.05f, 0.12f, 0.70f); // Darker, cleaner glass
-
-            // Layer 2: Subtle Accent Line
-            Outline rim = panelObj.AddComponent<Outline>();
-            rim.effectColor = new Color(neonBorderColor.r, neonBorderColor.g, neonBorderColor.b, 0.4f);
-            rim.effectDistance = new Vector2(1f, -1f); // Thin accent line
-
-            // Layer 3: Minimal Ambient Glow
-            Shadow glowShadow = panelObj.AddComponent<Shadow>();
-            glowShadow.effectColor = new Color(neonBorderColor.r, neonBorderColor.g, neonBorderColor.b, 0.2f);
-            glowShadow.effectDistance = new Vector2(-1f, 1f);
-
-            // Layer 4: Very faint Specular Highlight
-            GameObject highlight = new GameObject("GlassHighlight");
-            highlight.transform.SetParent(panelObj.transform, false);
-            RectTransform hlRect = highlight.AddComponent<RectTransform>();
-            hlRect.anchorMin = new Vector2(0.01f, 0.55f);
-            hlRect.anchorMax = new Vector2(0.99f, 0.98f);
-            hlRect.sizeDelta = Vector2.zero;
-
-            Image hlImg = highlight.AddComponent<Image>();
-            hlImg.sprite = GetRoundedRectSprite();
-            hlImg.type = Image.Type.Sliced;
-            hlImg.color = new Color(1f, 1f, 1f, 0.05f); // Extremely faint
-            hlImg.raycastTarget = false;
-
-            return panelObj;
+            if (cachedLockSprite == null) cachedLockSprite = BuildLockSprite(false);
+            return cachedLockSprite;
         }
 
-        public static GameObject CreateGlassmorphicPanel(Transform parent, Vector2 size, Color neonBorderColor, Vector2 anchoredPosition)
+        private static Sprite BuildLockSprite(bool open)
         {
-            return CreateGlassmorphicPanel(parent, size, neonBorderColor, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), anchoredPosition);
+            const int size = 96;
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.wrapMode = TextureWrapMode.Clamp;
+            tex.filterMode = FilterMode.Bilinear;
+
+            float cx = size * 0.5f;
+            float bodyHalfW = size * 0.26f;
+            float bodyLeft = cx - bodyHalfW;
+            float bodyBottom = size * 0.08f;
+            float bodyTop = size * 0.52f;
+            float bodyCornerR = size * 0.09f;
+            float bodyW = bodyHalfW * 2f;
+            float bodyH = bodyTop - bodyBottom;
+
+            float legOffset = size * 0.14f;
+            float legThickness = size * 0.10f;
+            float archOuterR = legOffset + legThickness * 0.5f;
+            float archInnerR = legOffset - legThickness * 0.5f;
+            float legHeight = size * 0.16f;
+            float archCenterX = open ? cx - legOffset * 0.25f : cx;
+            float archCenterY = bodyTop + legHeight + (open ? size * 0.05f : 0f);
+
+            float keyholeR = size * 0.045f;
+            float keyholeCenterY = bodyBottom + bodyH * 0.42f;
+            float slotHalfW = size * 0.022f;
+            float slotTop = keyholeCenterY;
+            float slotBottom = bodyBottom + bodyH * 0.18f;
+
+            Color32[] px = new Color32[size * size];
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float fx = x + 0.5f;
+                    float fy = y + 0.5f;
+
+                    // Body: rounded rect, same corner-distance technique as GetRoundedRectSprite.
+                    float lx = fx - bodyLeft;
+                    float ly = fy - bodyBottom;
+                    float bcx = (lx < bodyCornerR) ? bodyCornerR - lx : (lx > bodyW - bodyCornerR ? lx - (bodyW - bodyCornerR) : 0f);
+                    float bcy = (ly < bodyCornerR) ? bodyCornerR - ly : (ly > bodyH - bodyCornerR ? ly - (bodyH - bodyCornerR) : 0f);
+                    float bodyDist = Mathf.Sqrt(bcx * bcx + bcy * bcy);
+                    float alphaBody = Mathf.Clamp01(bodyCornerR - bodyDist + 0.5f);
+
+                    // Keyhole cutout: a circle over a short slot.
+                    float kdx = fx - cx;
+                    float kdy = fy - keyholeCenterY;
+                    float alphaKeyholeCircle = Mathf.Clamp01(keyholeR - Mathf.Sqrt(kdx * kdx + kdy * kdy) + 0.5f);
+                    float slotDx = Mathf.Abs(fx - cx) - slotHalfW;
+                    float alphaSlot = (fy <= slotTop && fy >= slotBottom) ? Mathf.Clamp01(0.5f - slotDx) : 0f;
+                    alphaBody *= 1f - Mathf.Max(alphaKeyholeCircle, alphaSlot);
+
+                    // Shackle: left leg always present; right leg only when closed/locked.
+                    float alphaLeg1 = LockLegAlpha(fx, fy, archCenterX - legOffset, legThickness, bodyTop, archCenterY);
+                    float alphaLeg2 = open ? 0f : LockLegAlpha(fx, fy, archCenterX + legOffset, legThickness, bodyTop, archCenterY);
+
+                    float adx = fx - archCenterX;
+                    float ady = fy - archCenterY;
+                    float archDist = Mathf.Sqrt(adx * adx + ady * ady);
+                    float alphaArch = ady >= 0f
+                        ? Mathf.Min(Mathf.Clamp01(archDist - archInnerR + 0.5f), Mathf.Clamp01(archOuterR - archDist + 0.5f))
+                        : 0f;
+
+                    float alpha = Mathf.Max(alphaBody, Mathf.Max(alphaLeg1, Mathf.Max(alphaLeg2, alphaArch)));
+                    px[y * size + x] = new Color32(255, 255, 255, (byte)Mathf.RoundToInt(alpha * 255f));
+                }
+            }
+
+            tex.SetPixels32(px);
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
         }
 
-        public static GameObject CreateGlassmorphicIconButton(Transform parent, Vector2 size, Color neonBorderColor, string labelText, Color textColor, int fontSize = 56, bool enablePulse = false)
+        private static float LockLegAlpha(float x, float y, float legX, float thickness, float yFrom, float yTo)
         {
-#if UNITY_EDITOR
-            GameObject prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/UI/GlassIconButton.prefab");
-            if (prefab != null)
+            if (y < yFrom - 0.5f || y > yTo + 0.5f) return 0f;
+            float dx = Mathf.Abs(x - legX) - thickness * 0.5f;
+            return Mathf.Clamp01(0.5f - dx);
+        }
+
+        // ------------------------------------------------------------------
+        // Panels and buttons now render through TubityXPanel: an analytic
+        // rounded rectangle with a neon rim, evaluated in the shader. These
+        // wrappers keep the old signatures so every call site in the menu moved
+        // over at once, but the five-graphic Image/Outline/Shadow stack is gone -
+        // each control is one graphic plus its label, and rim colour rides in the
+        // vertex stream so the whole menu shares a single material.
+        //
+        // The sprite helpers above are untouched; the HUD and FTUE still use them.
+        // ------------------------------------------------------------------
+
+        public static GameObject CreateGlassmorphicPanel(Transform parent, Vector2 size,
+                                                         Color neonBorderColor,
+                                                         Vector2 anchorMin, Vector2 anchorMax,
+                                                         Vector2 anchoredPosition)
+        {
+            GameObject panel = TubityXUIFactory.CreatePanel(parent, size, neonBorderColor,
+                                                            anchorMin, anchorMax, anchoredPosition);
+            panel.name = "GlassPanel";
+            return panel;
+        }
+
+        public static GameObject CreateGlassmorphicPanel(Transform parent, Vector2 size,
+                                                         Color neonBorderColor,
+                                                         Vector2 anchoredPosition)
+        {
+            return CreateGlassmorphicPanel(parent, size, neonBorderColor,
+                                           new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                                           anchoredPosition);
+        }
+
+        public static GameObject CreateGlassmorphicIconButton(Transform parent, Vector2 size,
+                                                              Color neonBorderColor,
+                                                              string labelText, Color textColor,
+                                                              int fontSize = 56,
+                                                              bool enablePulse = false)
+        {
+            // Old call sites pass Unity Text point sizes and pre-spaced strings
+            // like "C O N F I R M"; the display face brings its own tracking.
+            string label = labelText;
+            if (!string.IsNullOrEmpty(label) && LooksLetterSpaced(label))
+                label = label.Replace(" ", "");
+
+            float cap = Mathf.Clamp(fontSize * 0.68f, 12f, 40f);
+            float radius = Mathf.Min(16f, Mathf.Min(size.x, size.y) * 0.28f);
+
+            GameObject btn = TubityXUIFactory.CreateButton(parent, size, label, neonBorderColor,
+                                                           cap, cap * 0.14f, radius, enablePulse);
+            btn.name = "GlassIconButton";
+            return btn;
+        }
+
+        /// <summary>"C O N F I R M" - a space between every letter.</summary>
+        private static bool LooksLetterSpaced(string s)
+        {
+            int spaces = 0, letters = 0;
+            for (int i = 0; i < s.Length; i++)
             {
-                GameObject inst = UnityEditor.PrefabUtility.InstantiatePrefab(prefab, parent) as GameObject;
-                RectTransform rt = inst.GetComponent<RectTransform>();
-                rt.sizeDelta = size;
-
-                Outline r = inst.GetComponent<Outline>();
-                if (r != null) { r.effectColor = new Color(neonBorderColor.r, neonBorderColor.g, neonBorderColor.b, 0.4f); }
-                Shadow s = inst.GetComponent<Shadow>();
-                if (s != null) { s.effectColor = new Color(neonBorderColor.r, neonBorderColor.g, neonBorderColor.b, 0.2f); }
-
-                GlassUIButtonFX fxComp = inst.GetComponent<GlassUIButtonFX>();
-                if (fxComp != null) fxComp.enablePulse = enablePulse;
-
-                Transform iconTextTransform = inst.transform.Find("IconText");
-                if (iconTextTransform != null)
-                {
-                    Text t = iconTextTransform.GetComponent<Text>();
-                    if (t != null)
-                    {
-                        t.text = labelText;
-                        t.color = textColor;
-                        t.fontSize = fontSize;
-                    }
-                }
-                return inst;
+                if (s[i] == ' ') spaces++;
+                else letters++;
             }
-#endif
-
-            GameObject btnObj = new GameObject("GlassIconButton");
-            btnObj.transform.SetParent(parent, false);
-            RectTransform rect = btnObj.AddComponent<RectTransform>();
-            rect.sizeDelta = size;
-
-            // Layer 1: Base Glass Fill
-            Image bgImg = btnObj.AddComponent<Image>();
-            bgImg.sprite = GetRoundedRectSprite();
-            bgImg.type = Image.Type.Sliced;
-            bgImg.color = Color.white;
-
-            // Layer 2: Subtle Accent Line
-            Outline rim = btnObj.AddComponent<Outline>();
-            rim.effectColor = new Color(neonBorderColor.r, neonBorderColor.g, neonBorderColor.b, 0.4f);
-            rim.effectDistance = new Vector2(1f, -1f); // Thin accent line
-
-            // Layer 3: Minimal Ambient Glow
-            Shadow glowShadow = btnObj.AddComponent<Shadow>();
-            glowShadow.effectColor = new Color(neonBorderColor.r, neonBorderColor.g, neonBorderColor.b, 0.2f);
-            glowShadow.effectDistance = new Vector2(-1f, 1f);
-
-            // Layer 4: Faint Specular Highlight
-            GameObject highlight = new GameObject("GlassHighlight");
-            highlight.transform.SetParent(btnObj.transform, false);
-            RectTransform hlRect = highlight.AddComponent<RectTransform>();
-            hlRect.anchorMin = new Vector2(0.02f, 0.50f);
-            hlRect.anchorMax = new Vector2(0.98f, 0.96f);
-            hlRect.sizeDelta = Vector2.zero;
-
-            Image hlImg = highlight.AddComponent<Image>();
-            hlImg.sprite = GetRoundedRectSprite();
-            hlImg.type = Image.Type.Sliced;
-            hlImg.color = new Color(1f, 1f, 1f, 0.05f);
-            hlImg.raycastTarget = false;
-
-            // Layer 5: Icon / Text Content
-            if (!string.IsNullOrEmpty(labelText))
-            {
-                GameObject iconObj = new GameObject("IconText");
-                iconObj.transform.SetParent(btnObj.transform, false);
-                RectTransform iconRect = iconObj.AddComponent<RectTransform>();
-                iconRect.anchorMin = Vector2.zero;
-                iconRect.anchorMax = Vector2.one;
-                iconRect.sizeDelta = Vector2.zero;
-
-                Text iconText = iconObj.AddComponent<Text>();
-                // Try to load a clean sans-serif font for the cyber minimalist look
-                Font customFont = Font.CreateDynamicFontFromOSFont(new string[] { "Helvetica Neue", "Helvetica", "Roboto", "Arial" }, fontSize);
-                if (customFont != null)
-                {
-                    iconText.font = customFont;
-                }
-                else
-                {
-                    Font defaultFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-                    if (defaultFont == null) defaultFont = Resources.GetBuiltinResource<Font>("Arial.ttf");
-                    iconText.font = defaultFont;
-                }
-                
-                iconText.fontSize = fontSize;
-                iconText.fontStyle = FontStyle.Normal; // Minimalist normal font
-                iconText.alignment = TextAnchor.MiddleCenter;
-                iconText.color = textColor;
-                iconText.text = labelText;
-                
-                // Note: Purposely omitting text Shadow to keep the font thin and crisp, 
-                // which is a staple of the cyber minimalist style.
-            }
-
-            Button btn = btnObj.AddComponent<Button>();
-            btn.targetGraphic = bgImg;
-
-            ColorBlock cb = btn.colors;
-            cb.normalColor = new Color(1f, 1f, 1f, 0f); // Completely clear background
-            cb.highlightedColor = new Color(1f, 1f, 1f, 0.1f); // Subtle glass highlight on hover
-            cb.pressedColor = new Color(1f, 1f, 1f, 0.2f);
-            cb.selectedColor = new Color(1f, 1f, 1f, 0f);
-            cb.fadeDuration = 0.1f;
-            btn.colors = cb;
-            
-            // Add custom FX script
-            GlassUIButtonFX fx = btnObj.AddComponent<GlassUIButtonFX>();
-            fx.neonRim = rim;
-            fx.ambientGlow = glowShadow;
-            fx.enablePulse = enablePulse;
-
-            return btnObj;
+            return letters > 2 && spaces >= letters - 1;
         }
     }
 }

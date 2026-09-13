@@ -20,13 +20,11 @@ Shader "UI/TubityXPanel"
         _Color ("Tint", Color) = (1,1,1,1)
 
         [Header(Rim)]
-        _RimColor ("Rim Colour", Color) = (0.20, 0.62, 1.0, 1)
         _RimWidth ("Rim Width (px)", Range(0.5, 8)) = 2.2
         _RimCoreWhite ("Rim Core Whiteness", Range(0,1)) = 0.45
 
         [Header(Pulse)]
         _PulseColor ("Pulse Colour", Color) = (0.45, 0.98, 1.0, 1)
-        _PulseAmount ("Pulse Amount", Range(0,1)) = 0
         _PulsePeriod ("Pulse Period (sec)", Range(0.2, 10)) = 1.6
         _PulseBoost ("Pulse Brightness Boost", Range(0,2)) = 0.55
 
@@ -103,6 +101,7 @@ Shader "UI/TubityXPanel"
                 float4 color    : COLOR;
                 float4 texcoord : TEXCOORD0;   // pixels from the quad centre
                 float4 texcoord1: TEXCOORD1;   // halfW, halfH, radius, highlight
+                float4 texcoord2: TEXCOORD2;   // rim colour rgb, pulse amount
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
@@ -112,15 +111,16 @@ Shader "UI/TubityXPanel"
                 fixed4 color         : COLOR;
                 float2 local         : TEXCOORD0;
                 float4 shape         : TEXCOORD1;
-                float4 worldPosition : TEXCOORD2;
+                float4 tint          : TEXCOORD2;
+                float4 worldPosition : TEXCOORD3;
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
             fixed4 _Color;
             float4 _ClipRect;
-            fixed4 _RimColor, _PulseColor, _GlassColor, _SpecColor;
+            fixed4 _PulseColor, _GlassColor, _SpecColor;
             float  _RimWidth, _RimCoreWhite;
-            float  _PulseAmount, _PulsePeriod, _PulseBoost;
+            float  _PulsePeriod, _PulseBoost;
             float  _GlassAlpha, _SpecAlpha;
             float  _HaloRange, _HaloPower, _HaloStrength, _BleedFalloff, _BleedStrength;
             float4 _GhostOffset;
@@ -147,6 +147,7 @@ Shader "UI/TubityXPanel"
                 OUT.vertex = UnityObjectToClipPos(v.vertex);
                 OUT.local = v.texcoord.xy;
                 OUT.shape = v.texcoord1;
+                OUT.tint = v.texcoord2;
                 OUT.color = v.color * _Color;
                 return OUT;
             }
@@ -163,8 +164,8 @@ Shader "UI/TubityXPanel"
 
                 // one full cycle of the border pulse per _PulsePeriod seconds
                 float pulse = 0.5 - 0.5 * cos(_Time.y * 6.2831853 / _PulsePeriod);
-                pulse *= _PulseAmount;
-                half3 rim = lerp(_RimColor.rgb, _PulseColor.rgb, pulse);
+                pulse *= IN.tint.a;                       // per-panel pulse amount
+                half3 rim = lerp(IN.tint.rgb, _PulseColor.rgb, pulse);
                 float boost = 1.0 + _PulseBoost * pulse + _HighlightBoost * highlight;
 
                 float fillM  = saturate((-_RimWidth - d) / aa);

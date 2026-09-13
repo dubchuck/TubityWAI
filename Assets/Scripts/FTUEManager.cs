@@ -22,19 +22,24 @@ namespace TubityWAI
         private PlayerController player;
         private GameObject canvasObj;
         
-        // Target overlay elements
+        // Target overlay elements - a TubityX glass panel with a pulsing neon
+        // rim, a title line and a hint line in the display face.
         private GameObject targetOverlayObj;
         private RectTransform overlayRect;
-        private Outline overlayBorder;
-        private Text overlayText;
+        private TubityXPanel overlayChrome;
+        private TubityXLabel overlayTitle;
+        private TubityXLabel overlayHint;
 
-        // Progress loading graphic elements (center of screen)
+        // Progress dial (center of screen): round glass panel, radial fill, percent
         private GameObject progressContainerObj;
-        private Image borderRingImage;
+        private TubityXPanel progressChrome;
         private Image radialFillImage;
-        private Text percentText;
+        private TubityXLabel percentText;
 
-        private Font defaultFont;
+        private static readonly Color Gold = TubityXUIFactory.Gold;
+        private static readonly Color Cyan = new Color(0f, 1f, 1f);
+        private static readonly Color Pink = new Color(1f, 0.25f, 0.65f);
+        private static readonly Color Mint = new Color(0f, 1f, 0.55f);
 
         private float lastAngle = 0f;
         private float accumulatedClockwiseAngle = 0f;
@@ -74,12 +79,6 @@ namespace TubityWAI
                 lastAngle = player.currentAngle;
             }
 
-            defaultFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            if (defaultFont == null)
-            {
-                defaultFont = Resources.GetBuiltinResource<Font>("Arial.ttf");
-            }
-
             CreateFTUEUI();
             SetStep(FTUEStep.RotateClockwise);
         }
@@ -93,74 +92,49 @@ namespace TubityWAI
             Canvas canvas = canvasObj.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = 100; // Above HUD
+            canvas.additionalShaderChannels |= AdditionalCanvasShaderChannels.TexCoord1
+                                             | AdditionalCanvasShaderChannels.TexCoord2;
 
             CanvasScaler scaler = canvasObj.AddComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920, 1080);
+            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+            scaler.matchWidthOrHeight = 0.5f;
 
             canvasObj.AddComponent<GraphicRaycaster>();
 
-            // 2. Pulsing Target Overlay Container
-            targetOverlayObj = new GameObject("PulsingTargetOverlay");
-            targetOverlayObj.transform.SetParent(canvasObj.transform, false);
+            // The overlays are anchored to screen edges; keep them off the notch.
+            RectTransform safe = SafeAreaFitter.Create(canvasObj.transform, "SafeArea");
 
-            overlayRect = targetOverlayObj.AddComponent<RectTransform>();
+            // 2. Pulsing Target Overlay - anchors are set per step in SetStep
+            targetOverlayObj = TubityXUIFactory.CreatePanel(
+                safe, Vector2.zero, Cyan, new Vector2(0.02f, 0.33f), new Vector2(0.48f, 0.95f),
+                Vector2.zero, 28f);
+            targetOverlayObj.name = "PulsingTargetOverlay";
+            overlayRect = targetOverlayObj.GetComponent<RectTransform>();
+            overlayChrome = targetOverlayObj.GetComponent<TubityXPanel>();
+            overlayChrome.PulseAmount = 1f;          // the shader pulses the rim for us
+            overlayChrome.raycastTarget = false;     // taps must reach the gameplay input
 
-            Image overlayBg = targetOverlayObj.AddComponent<Image>();
-            overlayBg.sprite = GlassUIFactory.GetRoundedRectSprite();
-            overlayBg.type = Image.Type.Sliced;
-            overlayBg.color = new Color(0f, 0.85f, 1f, 0.15f);
+            overlayTitle = AddOverlayLine(targetOverlayObj, "OverlayTitle", 24f, 22f, Gold, Gold);
+            overlayHint = AddOverlayLine(targetOverlayObj, "OverlayHint", -22f, 14f, Color.white, Cyan);
 
-            overlayBorder = targetOverlayObj.AddComponent<Outline>();
-            overlayBorder.effectColor = new Color(0f, 1f, 1f, 0.85f);
-            overlayBorder.effectDistance = new Vector2(3f, -3f);
+            // 3. Center progress dial: round glass panel with a radial fill inside
+            float dial = 220f;
+            progressContainerObj = TubityXUIFactory.CreatePanel(
+                safe, new Vector2(dial, dial), Gold,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                new Vector2(0f, -40f), dial * 0.5f);
+            progressContainerObj.name = "CenterProgressGraphic";
+            progressChrome = progressContainerObj.GetComponent<TubityXPanel>();
+            progressChrome.raycastTarget = false;
 
-            Shadow overlayShadow = targetOverlayObj.AddComponent<Shadow>();
-            overlayShadow.effectColor = new Color(0f, 1f, 1f, 0.45f);
-            overlayShadow.effectDistance = new Vector2(-2f, 2f);
-
-            // Text inside Pulsing Target Overlay
-            GameObject textObj = new GameObject("OverlayText");
-            textObj.transform.SetParent(targetOverlayObj.transform, false);
-            RectTransform textRect = textObj.AddComponent<RectTransform>();
-            textRect.anchorMin = Vector2.zero;
-            textRect.anchorMax = Vector2.one;
-            textRect.sizeDelta = Vector2.zero;
-
-            overlayText = textObj.AddComponent<Text>();
-            overlayText.font = defaultFont;
-            overlayText.fontSize = 28;
-            overlayText.fontStyle = FontStyle.Bold;
-            overlayText.alignment = TextAnchor.MiddleCenter;
-            overlayText.color = new Color(1f, 0.85f, 0f);
-
-            Shadow textShadow = textObj.AddComponent<Shadow>();
-            textShadow.effectColor = new Color(0f, 0f, 0f, 0.9f);
-            textShadow.effectDistance = new Vector2(2f, -2f);
-
-            // 3. Center Radial Loading Graphic (Filled Circle + Border in Center of Screen)
-            progressContainerObj = new GameObject("CenterProgressGraphic");
-            progressContainerObj.transform.SetParent(canvasObj.transform, false);
-
-            RectTransform progressRect = progressContainerObj.AddComponent<RectTransform>();
-            progressRect.anchorMin = new Vector2(0.5f, 0.5f);
-            progressRect.anchorMax = new Vector2(0.5f, 0.5f);
-            progressRect.pivot = new Vector2(0.5f, 0.5f);
-            progressRect.sizeDelta = new Vector2(220f, 220f);
-            progressRect.anchoredPosition = new Vector2(0f, -40f);
-
-            // Background Glass Panel for Progress Graphic
-            Image progressBg = progressContainerObj.AddComponent<Image>();
-            progressBg.sprite = GlassUIFactory.GetCircleSprite();
-            progressBg.color = new Color(0.04f, 0.02f, 0.08f, 0.85f);
-
-            // Radial Filled Circle Image
-            GameObject fillObj = new GameObject("RadialFill");
+            GameObject fillObj = new GameObject("RadialFill", typeof(RectTransform));
             fillObj.transform.SetParent(progressContainerObj.transform, false);
-            RectTransform fillRect = fillObj.AddComponent<RectTransform>();
+            RectTransform fillRect = fillObj.GetComponent<RectTransform>();
             fillRect.anchorMin = Vector2.zero;
             fillRect.anchorMax = Vector2.one;
-            fillRect.sizeDelta = Vector2.zero;
+            fillRect.sizeDelta = new Vector2(-24f, -24f);
 
             radialFillImage = fillObj.AddComponent<Image>();
             radialFillImage.sprite = GlassUIFactory.GetCircleSprite();
@@ -169,45 +143,68 @@ namespace TubityWAI
             radialFillImage.fillOrigin = (int)Image.Origin360.Top;
             radialFillImage.fillClockwise = true;
             radialFillImage.fillAmount = 0f;
-            radialFillImage.color = new Color(0f, 1f, 1f, 0.85f);
+            radialFillImage.color = new Color(0f, 1f, 1f, 0.35f);
+            radialFillImage.raycastTarget = false;
 
-            // Outer Border Ring
-            GameObject borderObj = new GameObject("BorderRing");
-            borderObj.transform.SetParent(progressContainerObj.transform, false);
-            RectTransform borderRect = borderObj.AddComponent<RectTransform>();
-            borderRect.anchorMin = Vector2.zero;
-            borderRect.anchorMax = Vector2.one;
-            borderRect.sizeDelta = Vector2.zero;
-
-            borderRingImage = borderObj.AddComponent<Image>();
-            borderRingImage.sprite = GlassUIFactory.GetRingSprite();
-            borderRingImage.color = new Color(1f, 0.85f, 0f, 0.95f);
-
-            Outline ringGlow = borderObj.AddComponent<Outline>();
-            ringGlow.effectColor = new Color(1f, 0.85f, 0f, 0.6f);
-            ringGlow.effectDistance = new Vector2(1.5f, -1.5f);
-
-            // Percentage Text in Center
-            GameObject percentObj = new GameObject("PercentText");
+            GameObject percentObj = new GameObject("PercentText", typeof(RectTransform));
             percentObj.transform.SetParent(progressContainerObj.transform, false);
-            RectTransform percentRect = percentObj.AddComponent<RectTransform>();
-            percentRect.anchorMin = Vector2.zero;
-            percentRect.anchorMax = Vector2.one;
+            RectTransform percentRect = percentObj.GetComponent<RectTransform>();
+            percentRect.anchorMin = new Vector2(0.1f, 0.3f);
+            percentRect.anchorMax = new Vector2(0.9f, 0.7f);
             percentRect.sizeDelta = Vector2.zero;
 
-            percentText = percentObj.AddComponent<Text>();
-            percentText.font = defaultFont;
-            percentText.fontSize = 32;
-            percentText.fontStyle = FontStyle.Bold;
-            percentText.alignment = TextAnchor.MiddleCenter;
-            percentText.color = Color.white;
-            percentText.text = "0%";
-
-            Shadow percentShadow = percentObj.AddComponent<Shadow>();
-            percentShadow.effectColor = new Color(0f, 0f, 0f, 0.9f);
-            percentShadow.effectDistance = new Vector2(2f, -2f);
+            percentText = TubityXUIFactory.AddLabel(percentObj, "0%", 30f, Color.white, Cyan, 3f);
 
             progressContainerObj.SetActive(false);
+        }
+
+        /// <summary>One line of overlay copy, vertically offset from the panel centre.</summary>
+        private static TubityXLabel AddOverlayLine(GameObject panel, string name, float yOffset,
+                                                   float cap, Color face, Color accent)
+        {
+            GameObject host = new GameObject(name, typeof(RectTransform));
+            host.transform.SetParent(panel.transform, false);
+            RectTransform r = host.GetComponent<RectTransform>();
+            r.anchorMin = new Vector2(0.03f, 0.5f);
+            r.anchorMax = new Vector2(0.97f, 0.5f);
+            r.pivot = new Vector2(0.5f, 0.5f);
+            r.sizeDelta = new Vector2(0f, cap * 2.4f);
+            r.anchoredPosition = new Vector2(0f, yOffset);
+            return TubityXUIFactory.AddLabel(host, "", cap, face, accent, cap * 0.16f);
+        }
+
+        /// <summary>Title on the first line, hint on the second; either may be empty.</summary>
+        private void SetOverlayText(string title, string hint, Color face)
+        {
+            if (overlayTitle != null)
+            {
+                overlayTitle.Text = title;
+                overlayTitle.color = face;
+                overlayTitle.RimColor = face;
+                RectTransform tr = overlayTitle.transform.parent as RectTransform;
+                if (tr != null) tr.anchoredPosition = new Vector2(0f, string.IsNullOrEmpty(hint) ? 0f : 22f);
+            }
+            if (overlayHint != null)
+            {
+                overlayHint.Text = hint ?? "";
+            }
+        }
+
+        private void SetOverlayText(string title, Color face)
+        {
+            SetOverlayText(title, "", face);
+        }
+
+        private void SetOverlayRim(Color rim)
+        {
+            if (overlayChrome != null) overlayChrome.RimColor = rim;
+        }
+
+        private void SetProgressColors(Color fill, Color rim)
+        {
+            if (radialFillImage != null)
+                radialFillImage.color = new Color(fill.r, fill.g, fill.b, 0.35f);
+            if (progressChrome != null) progressChrome.RimColor = rim;
         }
 
         private void SetStep(FTUEStep step)
@@ -215,15 +212,8 @@ namespace TubityWAI
             CurrentStep = step;
             isTransitioningStep = false;
 
-            if (radialFillImage != null)
-            {
-                radialFillImage.color = new Color(0f, 1f, 1f, 0.85f);
-                radialFillImage.fillAmount = 0f;
-            }
-            if (borderRingImage != null)
-            {
-                borderRingImage.color = new Color(1f, 0.85f, 0f, 0.95f);
-            }
+            if (radialFillImage != null) radialFillImage.fillAmount = 0f;
+            SetProgressColors(Cyan, Gold);
 
             switch (step)
             {
@@ -231,12 +221,8 @@ namespace TubityWAI
                     overlayRect.anchorMin = new Vector2(0.52f, 0.33f);
                     overlayRect.anchorMax = new Vector2(0.98f, 0.95f);
                     overlayRect.sizeDelta = Vector2.zero;
-                    if (overlayBorder != null) overlayBorder.effectColor = new Color(0f, 1f, 1f, 0.85f);
-                    if (overlayText != null)
-                    {
-                        overlayText.text = "STEP 1: ROTATE CLOCKWISE\nTAP / HOLD HERE \u25B6\u25B6";
-                        overlayText.color = new Color(1f, 0.85f, 0f);
-                    }
+                    SetOverlayRim(Cyan);
+                    SetOverlayText("STEP 1: ROTATE CLOCKWISE", "TAP / HOLD HERE \u25B6\u25B6", Gold);
                     if (progressContainerObj != null) progressContainerObj.SetActive(false);
                     break;
 
@@ -244,12 +230,8 @@ namespace TubityWAI
                     overlayRect.anchorMin = new Vector2(0.02f, 0.33f);
                     overlayRect.anchorMax = new Vector2(0.48f, 0.95f);
                     overlayRect.sizeDelta = Vector2.zero;
-                    if (overlayBorder != null) overlayBorder.effectColor = new Color(1f, 0f, 0.6f, 0.85f);
-                    if (overlayText != null)
-                    {
-                        overlayText.text = "STEP 2: ROTATE COUNTER-CLOCKWISE\n\u25C0\u25C0 TAP / HOLD HERE";
-                        overlayText.color = new Color(1f, 0.85f, 0f);
-                    }
+                    SetOverlayRim(Pink);
+                    SetOverlayText("STEP 2: ROTATE COUNTER-CLOCKWISE", "\u25C0\u25C0 TAP / HOLD HERE", Gold);
                     if (progressContainerObj != null) progressContainerObj.SetActive(false);
                     break;
 
@@ -257,12 +239,8 @@ namespace TubityWAI
                     overlayRect.anchorMin = new Vector2(0.05f, 0.05f);
                     overlayRect.anchorMax = new Vector2(0.95f, 0.28f);
                     overlayRect.sizeDelta = Vector2.zero;
-                    if (overlayBorder != null) overlayBorder.effectColor = new Color(1f, 0.85f, 0f, 0.85f);
-                    if (overlayText != null)
-                    {
-                        overlayText.text = "STEP 3: SINGLE JUMP\nTAP BOTTOM AREA OR PRESS SPACE";
-                        overlayText.color = new Color(1f, 0.85f, 0f);
-                    }
+                    SetOverlayRim(Gold);
+                    SetOverlayText("STEP 3: SINGLE JUMP", "TAP BOTTOM AREA OR PRESS SPACE", Gold);
                     if (progressContainerObj != null) progressContainerObj.SetActive(false); // No loading graphic for jump
                     wasJumping = false;
                     break;
@@ -271,12 +249,8 @@ namespace TubityWAI
                     overlayRect.anchorMin = new Vector2(0.05f, 0.05f);
                     overlayRect.anchorMax = new Vector2(0.95f, 0.28f);
                     overlayRect.sizeDelta = Vector2.zero;
-                    if (overlayBorder != null) overlayBorder.effectColor = new Color(0f, 1f, 0.85f, 0.85f);
-                    if (overlayText != null)
-                    {
-                        overlayText.text = "STEP 4: DOUBLE JUMP CROSSOVER\nDOUBLE TAP BOTTOM OR PRESS SPACE TWICE";
-                        overlayText.color = new Color(1f, 0.85f, 0f);
-                    }
+                    SetOverlayRim(Mint);
+                    SetOverlayText("STEP 4: DOUBLE JUMP CROSSOVER", "DOUBLE TAP BOTTOM OR PRESS SPACE TWICE", Gold);
                     if (progressContainerObj != null) progressContainerObj.SetActive(false); // No loading graphic for double jump
                     wasJumping = false;
                     hasInitiatedDoubleJump = false;
@@ -292,15 +266,6 @@ namespace TubityWAI
         private void Update()
         {
             if (CurrentStep == FTUEStep.Complete || isTransitioningStep) return;
-
-            // Pulse target overlay visual border alpha
-            if (targetOverlayObj != null && overlayBorder != null)
-            {
-                float pulse = 0.65f + Mathf.Sin(Time.time * 4.5f) * 0.25f;
-                Color borderCol = overlayBorder.effectColor;
-                borderCol.a = pulse;
-                overlayBorder.effectColor = borderCol;
-            }
 
             if (player == null)
             {
@@ -326,7 +291,7 @@ namespace TubityWAI
                     }
                     float progClockwise = Mathf.Clamp01(accumulatedClockwiseAngle / FULL_CIRCLE_RADIANS);
                     if (radialFillImage != null) radialFillImage.fillAmount = progClockwise;
-                    if (percentText != null) percentText.text = $"{Mathf.RoundToInt(progClockwise * 100f)}%";
+                    if (percentText != null) percentText.Text = Mathf.RoundToInt(progClockwise * 100f) + "%";
 
                     if (progClockwise >= 1.0f)
                     {
@@ -343,7 +308,7 @@ namespace TubityWAI
                     }
                     float progCounter = Mathf.Clamp01(accumulatedCounterClockwiseAngle / FULL_CIRCLE_RADIANS);
                     if (radialFillImage != null) radialFillImage.fillAmount = progCounter;
-                    if (percentText != null) percentText.text = $"{Mathf.RoundToInt(progCounter * 100f)}%";
+                    if (percentText != null) percentText.Text = Mathf.RoundToInt(progCounter * 100f) + "%";
 
                     if (progCounter >= 1.0f)
                     {
@@ -356,7 +321,7 @@ namespace TubityWAI
                     if (player.IsJumping)
                     {
                         wasJumping = true;
-                        if (overlayText != null) overlayText.text = "JUMP IN FLIGHT...";
+                        SetOverlayText("JUMP IN FLIGHT...", Gold);
                     }
                     else if (wasJumping)
                     {
@@ -373,7 +338,7 @@ namespace TubityWAI
                         if (player.HasCrossedOver)
                         {
                             hasInitiatedDoubleJump = true;
-                            if (overlayText != null) overlayText.text = "CROSSOVER JUMP IN FLIGHT!";
+                            SetOverlayText("CROSSOVER JUMP IN FLIGHT!", Gold);
                         }
                     }
                     else if (wasJumping && hasInitiatedDoubleJump)
@@ -388,20 +353,9 @@ namespace TubityWAI
 
         private IEnumerator TransitionToNextStep(FTUEStep nextStep, string successMessage)
         {
-            if (overlayText != null)
-            {
-                overlayText.text = successMessage;
-                overlayText.color = new Color(0f, 1f, 0.5f);
-            }
-
-            if (radialFillImage != null)
-            {
-                radialFillImage.color = new Color(0f, 1f, 0.5f, 0.95f);
-            }
-            if (borderRingImage != null)
-            {
-                borderRingImage.color = new Color(0f, 1f, 0.5f, 0.95f);
-            }
+            SetOverlayText(successMessage, Mint);
+            SetOverlayRim(Mint);
+            SetProgressColors(Mint, Mint);
 
             yield return new WaitForSeconds(0.9f);
 
@@ -412,11 +366,8 @@ namespace TubityWAI
         {
             CurrentStep = FTUEStep.Complete;
 
-            if (overlayText != null)
-            {
-                overlayText.text = "TUTORIAL COMPLETE!\nYOU ARE READY TO FLY!";
-                overlayText.color = new Color(0f, 1f, 0.5f);
-            }
+            SetOverlayText("TUTORIAL COMPLETE!", "YOU ARE READY TO FLY!", Mint);
+            SetOverlayRim(Mint);
 
             yield return new WaitForSeconds(1.2f);
 

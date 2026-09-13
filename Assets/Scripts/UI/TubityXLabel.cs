@@ -24,6 +24,14 @@ namespace TubityWAI
         [SerializeField] private Color rimColor = new Color(0.30f, 0.80f, 1f, 1f);
         [Range(0f, 2f)] [SerializeField] private float glowStrength = 0.4f;
 
+        public enum Align { Left, Center, Right }
+        [SerializeField] private Align alignment = Align.Center;
+
+        [Tooltip("Shrink the cap height so the string fits its rect. This face is " +
+                 "much wider than a normal UI sans, so long labels need it.")]
+        [SerializeField] private bool autoFit = true;
+        [SerializeField] private float fitPadding = 14f;
+
         private static Texture2D atlas;
 
         public string Text
@@ -50,6 +58,18 @@ namespace TubityWAI
             set { tracking = value; SetVerticesDirty(); }
         }
 
+        public Align Alignment
+        {
+            get { return alignment; }
+            set { alignment = value; SetVerticesDirty(); }
+        }
+
+        public bool AutoFit
+        {
+            get { return autoFit; }
+            set { autoFit = value; SetVerticesDirty(); }
+        }
+
         public override Texture mainTexture
         {
             get
@@ -71,14 +91,26 @@ namespace TubityWAI
             TubityXPanel.EnableTexCoord1(canvas);
         }
 
-        /// <summary>Rendered width in local units, for sizing a button to its label.</summary>
-        public float MeasureWidth()
+        /// <summary>Rendered width at a given cap height, in local units.</summary>
+        public float MeasureWidth(float cap)
         {
             if (string.IsNullOrEmpty(text)) return 0f;
-            float s = capHeight / TubityXFontMetrics.Cap;
+            float s = cap / TubityXFontMetrics.Cap;
             float w = 0f;
             for (int i = 0; i < text.Length; i++) w += TubityXFontMetrics.Get(text[i]).Advance * s;
             return w + tracking * Mathf.Max(0, text.Length - 1);
+        }
+
+        public float MeasureWidth() { return MeasureWidth(capHeight); }
+
+        /// <summary>Cap height after auto-fit, for the rect the label occupies.</summary>
+        private float FittedCap(Rect r)
+        {
+            if (!autoFit || string.IsNullOrEmpty(text)) return capHeight;
+            float avail = r.width - fitPadding;
+            if (avail <= 1f) return capHeight;
+            float w = MeasureWidth(capHeight);
+            return w <= avail ? capHeight : capHeight * (avail / w);
         }
 
         protected override void OnPopulateMesh(VertexHelper vh)
@@ -86,14 +118,19 @@ namespace TubityWAI
             vh.Clear();
             if (string.IsNullOrEmpty(text)) return;
 
-            float s = capHeight / TubityXFontMetrics.Cap;
+            Rect r = GetPixelAdjustedRect();
+            float cap = FittedCap(r);
+            float s = cap / TubityXFontMetrics.Cap;
             float pad = TubityXFontMetrics.Pad * s;
             float aw = TubityXFontMetrics.AtlasWidth;
             float ah = TubityXFontMetrics.AtlasHeight;
 
-            Rect r = GetPixelAdjustedRect();
-            float pen = r.x + (r.width - MeasureWidth()) * 0.5f;
-            float capTop = r.y + (r.height + capHeight) * 0.5f;    // y is up in UI space
+            float width = MeasureWidth(cap);
+            float pen;
+            if (alignment == Align.Left) pen = r.x + fitPadding * 0.5f;
+            else if (alignment == Align.Right) pen = r.xMax - fitPadding * 0.5f - width;
+            else pen = r.x + (r.width - width) * 0.5f;
+            float capTop = r.y + (r.height + cap) * 0.5f;    // y is up in UI space
 
             Color32 c = color;
             Vector4 accent = new Vector4(rimColor.r, rimColor.g, rimColor.b, glowStrength);

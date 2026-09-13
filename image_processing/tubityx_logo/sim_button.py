@@ -12,8 +12,9 @@ CAP = float(re.search(r"Cap = ([\d.]+)f", CS).group(1))
 PAD = float(re.search(r"Pad = ([\d.]+)f", CS).group(1))
 SPREAD = float(re.search(r"Spread = ([\d.]+)f", CS).group(1))
 GLYPHS = {}
-for m in re.finditer(r"new G\((?:'(\\?.)'), ([\d.]+), ([\d.]+), ([\d.]+), ([\d.]+), ([\d.]+)f\)", CS):
-    ch = m.group(1).replace("\\'", "'")
+for m in re.finditer(r"new G\('(\\u[0-9A-Fa-f]{4}|\\'|.)', ([\d.]+), ([\d.]+), ([\d.]+), ([\d.]+), ([\d.]+)f\)", CS):
+    raw = m.group(1)
+    ch = chr(int(raw[2:], 16)) if raw.startswith("\\u") else raw.replace("\\'", "'")
     GLYPHS[ch] = tuple(float(x) for x in m.groups()[1:])
 
 
@@ -38,7 +39,7 @@ def bilinear(img, x, y):
 
 def text_width(text, cap_px, tracking):
     s = cap_px / CAP
-    return sum(GLYPHS.get(c.upper(), GLYPHS[" "])[4] for c in text) * s + tracking * (len(text) - 1)
+    return sum(GLYPHS.get(c, GLYPHS.get(c.upper(), GLYPHS[" "]))[4] for c in text) * s + tracking * (len(text) - 1)
 
 
 def label_sdf(W, H, text, cap_px, cx, cy, tracking):
@@ -50,7 +51,7 @@ def label_sdf(W, H, text, cap_px, cx, cy, tracking):
     out = np.full((H, W), 1e6)
     ys, xs = np.mgrid[0:H, 0:W]
     for ch in text:
-        gx, gy, gw, gh, adv = GLYPHS.get(ch.upper(), GLYPHS[" "])
+        gx, gy, gw, gh, adv = GLYPHS.get(ch, GLYPHS.get(ch.upper(), GLYPHS[" "]))
         x0 = pen - PAD * s
         y0 = top - PAD * s
         u = (xs - x0) / (gw * s) * gw + gx

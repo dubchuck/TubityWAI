@@ -26,6 +26,15 @@ namespace TubityWAI
         [Range(0f, 1f)]
         [SerializeField] private float highlight;
 
+        [Header("Colour")]
+        [Tooltip("Neon rim colour. Travels in the vertex stream, so every panel in " +
+                 "the menu can have its own colour and still share one material.")]
+        [SerializeField] private Color rimColor = new Color(0.20f, 0.62f, 1f, 1f);
+
+        [Range(0f, 1f)]
+        [Tooltip("0 = steady border, 1 = full colour pulse.")]
+        [SerializeField] private float pulseAmount;
+
         /// <summary>0 = idle, 1 = hovered / focused. Written into the vertex
         /// stream, so changing it never instances the material.</summary>
         public float Highlight
@@ -46,13 +55,26 @@ namespace TubityWAI
             set { cornerRadius = value; SetVerticesDirty(); }
         }
 
-        /// <summary>The shader reads geometry from TEXCOORD1, which canvases do
-        /// not send by default.</summary>
+        public Color RimColor
+        {
+            get { return rimColor; }
+            set { rimColor = value; SetVerticesDirty(); }
+        }
+
+        public float PulseAmount
+        {
+            get { return pulseAmount; }
+            set { pulseAmount = Mathf.Clamp01(value); SetVerticesDirty(); }
+        }
+
+        /// <summary>The shaders read geometry from TEXCOORD1 and colour from
+        /// TEXCOORD2. Canvases send neither by default.</summary>
         internal static void EnableTexCoord1(Canvas canvas)
         {
             if (canvas == null) return;
             Canvas root = canvas.rootCanvas != null ? canvas.rootCanvas : canvas;
-            root.additionalShaderChannels |= AdditionalCanvasShaderChannels.TexCoord1;
+            root.additionalShaderChannels |= AdditionalCanvasShaderChannels.TexCoord1
+                                           | AdditionalCanvasShaderChannels.TexCoord2;
         }
 
         protected override void OnEnable()
@@ -84,23 +106,24 @@ namespace TubityWAI
             Vector4 shape = new Vector4(halfW, halfH,
                                         Mathf.Min(cornerRadius, Mathf.Min(halfW, halfH)),
                                         highlight);
+            Vector4 tint = new Vector4(rimColor.r, rimColor.g, rimColor.b, pulseAmount);
 
-            AddVert(vh, cx - ex, cy - ey, -ex, -ey, c, shape);
-            AddVert(vh, cx - ex, cy + ey, -ex, ey, c, shape);
-            AddVert(vh, cx + ex, cy + ey, ex, ey, c, shape);
-            AddVert(vh, cx + ex, cy - ey, ex, -ey, c, shape);
+            AddVert(vh, cx - ex, cy - ey, -ex, -ey, c, shape, tint);
+            AddVert(vh, cx - ex, cy + ey, -ex, ey, c, shape, tint);
+            AddVert(vh, cx + ex, cy + ey, ex, ey, c, shape, tint);
+            AddVert(vh, cx + ex, cy - ey, ex, -ey, c, shape, tint);
 
             vh.AddTriangle(0, 1, 2);
             vh.AddTriangle(2, 3, 0);
         }
 
-        private static void AddVert(VertexHelper vh, float x, float y,
-                                    float lx, float ly, Color32 c, Vector4 shape)
+        private static void AddVert(VertexHelper vh, float x, float y, float lx, float ly,
+                                    Color32 c, Vector4 shape, Vector4 tint)
         {
-            // uv0 carries pixels from the quad centre; uv1 the rounded-rect shape
+            // uv0 = pixels from the quad centre, uv1 = rounded-rect shape,
+            // uv2 = rim colour + pulse amount
             vh.AddVert(new Vector3(x, y), c,
-                       new Vector4(lx, ly, 0f, 0f), shape,
-                       Vector4.zero, Vector4.zero,
+                       new Vector4(lx, ly, 0f, 0f), shape, tint, Vector4.zero,
                        Vector3.back, new Vector4(1f, 0f, 0f, -1f));
         }
 

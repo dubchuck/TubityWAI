@@ -96,3 +96,37 @@ Button colour comes from the material, so each colourway is its own asset:
 `Mat_TubityXButtonBlue` (border pulses, 2.2 s) and `Mat_TubityXButtonPurple`
 (steady). Label accent colour rides in TEXCOORD1 instead, so every label in the
 menu shares `Mat_TubityXLabel`.
+
+
+---
+
+# The attract-screen hero
+
+`arcsphere.py` generates the neon band sphere; `render_stage.py` software-renders
+the whole stage - sphere, pad and reflection - offline. That preview is unusually
+trustworthy here because everything on screen is unlit and additive: there is no
+lighting model to approximate, only bloom.
+
+```sh
+python3 render_stage.py     # -> stage.png
+python3 export_bands.py     # -> NeonBandData.cs
+```
+
+`export_bands.py` bakes the band table into C# rather than re-rolling it from an
+RNG at runtime, so Unity renders exactly the arrangement the preview showed.
+Copy the generated file to `Assets/Scripts/Attract/`.
+
+## What the bands actually are
+
+Not a criss-cross cage of great circles - that was the first guess and it looked
+wrong. They are **latitude rings wound around a tilted axis**, lying on the
+surface of a dark sphere. That is what produces the two nested-circle "eyes" at
+the poles in the concept art, and why the bands on the far side are hidden. A
+second, sparser family around a different axis supplies the crossing diagonals.
+
+Because the bands sit *on* the sphere, the opaque core hides the back half
+through the depth buffer alone. No sorting, no transparency tricks.
+
+Tune `CFG` in `arcsphere.py`: `bands`, `axis_tilt` / `axis_spin` (where the poles
+land), `pole_bias` (<1 clusters rings toward the poles), `width_min/max` and
+`gap_jitter`. Re-run both scripts after any change.

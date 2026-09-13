@@ -208,7 +208,7 @@ namespace TubityWAI
             float depth = Random.Range(4f, 7.5f);
             building.transform.localScale = new Vector3(width, height, depth);
 
-            building.GetComponent<MeshRenderer>().sharedMaterial = mat;
+            SetupBuildingRenderer(building, mat);
             Destroy(building.GetComponent<Collider>());
             return building;
         }
@@ -224,7 +224,7 @@ namespace TubityWAI
             float depth = Random.Range(5f, 9f);
             building.transform.localScale = new Vector3(width, height, depth);
 
-            building.GetComponent<MeshRenderer>().sharedMaterial = mat;
+            SetupBuildingRenderer(building, mat);
             Destroy(building.GetComponent<Collider>());
             return building;
         }
@@ -239,7 +239,7 @@ namespace TubityWAI
             float height = Random.Range(24f, 50f);
             tower.transform.localScale = new Vector3(diam, height * 0.5f, diam); // Cylinder default length is 2 units
 
-            tower.GetComponent<MeshRenderer>().sharedMaterial = mat;
+            SetupBuildingRenderer(tower, mat);
             Destroy(tower.GetComponent<Collider>());
             return tower;
         }
@@ -255,9 +255,20 @@ namespace TubityWAI
             float depth = Random.Range(7f, 13f);
             block.transform.localScale = new Vector3(width, height, depth);
 
-            block.GetComponent<MeshRenderer>().sharedMaterial = mat;
+            SetupBuildingRenderer(block, mat);
             Destroy(block.GetComponent<Collider>());
             return block;
+        }
+
+        /// <summary>Background buildings are distant set dressing: no shadows needed.</summary>
+        private static void SetupBuildingRenderer(GameObject building, Material mat)
+        {
+            MeshRenderer mr = building.GetComponent<MeshRenderer>();
+            mr.sharedMaterial = mat;
+            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            mr.receiveShadows = false;
+            mr.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
+            mr.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
         }
     }
 }

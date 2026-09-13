@@ -2,6 +2,14 @@ using UnityEngine;
 
 namespace TubityWAI
 {
+    // Runs before every default-order script's LateUpdate (AttractionModeRotator,
+    // EnvironmentManager, AttractionSphereMorpher, AttractHeroStage, ...), several
+    // of which read Camera.main.transform.position in their own LateUpdate to track
+    // the camera. Without this, their relative order versus this component is
+    // undefined, so on frames where they run first they'd read last frame's camera
+    // position - a one-frame-stale offset that varies with frame time and shows up
+    // as a subtle continuous jitter of those objects relative to the camera.
+    [DefaultExecutionOrder(-100)]
     public class CameraController : MonoBehaviour
     {
         [Header("Follow Settings")]

@@ -1,15 +1,47 @@
 using UnityEditor;
+using UnityEditor.Callbacks;
+using UnityEditor.iOS.Xcode;
 using UnityEngine;
+using System.IO;
 
 namespace TubityWAI
 {
     public static class BuildPipeline
     {
+        // Unity regenerates Info.plist from scratch on every export, so without this
+        // every new build lands in "Missing Compliance" in App Store Connect and stays
+        // invisible to internal/external testers until someone manually answers the
+        // export compliance question there. We only use standard HTTPS/TLS, which is exempt.
+        [PostProcessBuild(100)]
+        public static void SetExportComplianceOnPostProcessBuild(BuildTarget target, string pathToBuiltProject)
+        {
+            if (target != BuildTarget.iOS && target != BuildTarget.tvOS)
+            {
+                return;
+            }
+
+            string plistPath = Path.Combine(pathToBuiltProject, "Info.plist");
+            PlistDocument plist = new PlistDocument();
+            plist.ReadFromFile(plistPath);
+            plist.root.SetBoolean("ITSAppUsesNonExemptEncryption", false);
+            plist.WriteToFile(plistPath);
+            Debug.Log("[BuildPipeline] Set ITSAppUsesNonExemptEncryption=false in Info.plist.");
+        }
+
         [MenuItem("Build/Export iOS Project")]
         public static void BuildiOSProject()
         {
             string[] scenes = { "Assets/Scenes/SampleScene.unity" };
             string buildPath = "Build-iOS";
+
+            // GoogleMobileAds/Editor/PListProcessor.cs is compiled only when UNITY_IOS is defined,
+            // which reflects the Editor's active build target, not the target passed to BuildPlayer.
+            // Switch explicitly so its [PostProcessBuild] hook (and ours) actually compile and run.
+            if (EditorUserBuildSettings.activeBuildTarget != BuildTarget.iOS)
+            {
+                Debug.Log("[BuildPipeline] Switching active build target to iOS...");
+                EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.iOS, BuildTarget.iOS);
+            }
 
             Debug.Log("[BuildPipeline] Setting Application Identifier and Product Name from Env...");
             string envBundleId = System.Environment.GetEnvironmentVariable("BUNDLE_ID");
@@ -106,6 +138,7 @@ namespace TubityWAI
             if (summary.result == UnityEditor.Build.Reporting.BuildResult.Succeeded)
             {
                 Debug.Log($"[BuildPipeline] Success! Xcode project exported to: {buildPath}");
+                VerifyRequiredPlistKeysOrFail(buildPath);
             }
             else
             {
@@ -114,6 +147,51 @@ namespace TubityWAI
                 {
                     EditorApplication.Exit(1);
                 }
+            }
+        }
+
+        // The Google Mobile Ads SDK throws an uncaught native exception on every app launch
+        // if GADApplicationIdentifier is missing from Info.plist (crashes on device, not in Editor).
+        // We've shipped a TestFlight build missing this key before because a [PostProcessBuild]
+        // hook silently failed to run, so we verify it landed instead of trusting the hook.
+        private static void VerifyRequiredPlistKeysOrFail(string pathToBuiltProject)
+        {
+            string plistPath = Path.Combine(pathToBuiltProject, "Info.plist");
+            PlistDocument plist = new PlistDocument();
+            plist.ReadFromFile(plistPath);
+
+            var missingKeys = new System.Collections.Generic.List<string>();
+
+            if (!plist.root.values.TryGetValue("GADApplicationIdentifier", out PlistElement gadId)
+                || string.IsNullOrEmpty(gadId.AsString()))
+            {
+                missingKeys.Add("GADApplicationIdentifier");
+            }
+
+            if (!plist.root.values.ContainsKey("ITSAppUsesNonExemptEncryption"))
+            {
+                missingKeys.Add("ITSAppUsesNonExemptEncryption");
+            }
+
+            if (missingKeys.Count > 0)
+            {
+                string message = "[BuildPipeline] Export succeeded but required Info.plist keys are missing: "
+                    + string.Join(", ", missingKeys)
+                    + ". PostProcessBuild hooks (GoogleMobileAds PListProcessor and/or our own) did not run. "
+                    + "Shipping this build would crash on launch on real devices. Aborting.";
+                Debug.LogError(message);
+                if (Application.isBatchMode)
+                {
+                    EditorApplication.Exit(1);
+                }
+                else
+                {
+                    throw new UnityEditor.BuildPlayerWindow.BuildMethodException(message);
+                }
+            }
+            else
+            {
+                Debug.Log("[BuildPipeline] Verified required Info.plist keys are present.");
             }
         }
 

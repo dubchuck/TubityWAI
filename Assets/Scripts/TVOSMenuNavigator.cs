@@ -33,7 +33,9 @@ namespace TubityWAI
 
         private void Awake()
         {
-#if UNITY_EDITOR
+#if UNITY_EDITOR || !UNITY_TVOS
+            // Focus/reticle navigation is tvOS-only; on iOS (and any other platform) touch
+            // must activate buttons directly with no D-pad-style highlight state.
             Destroy(gameObject);
             return;
 #endif

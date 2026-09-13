@@ -7,12 +7,52 @@ namespace TubityWAI
     public class AttractionSphereMorpher : MonoBehaviour
     {
         public int currentCount = 1;
+
+        [Header("Ground Plane")]
+        [Tooltip("Keep the whole formation clear of the hero platform, so the count " +
+                 "selector stands on the same pad the menu sphere hovers over.")]
+        public bool groundToPlane;
+        public float groundPlaneY = -1.58f;
+        public float groundGap = 0.12f;
+        [Tooltip("Radius of one sphere at scale 1, used to work out how far the " +
+                 "formation reaches.")]
+        public float unitSphereRadius = 0.5f;
         private List<GameObject> activeSpheres = new List<GameObject>();
+
+        /// <summary>Set by the sphere-count selector while the browsed count is a
+        /// still-locked block, so newly morphed-in spheres pick up the same fade.</summary>
+        private bool isLocked = false;
+
+        /// <summary>
+        /// Called for every sphere the formation creates, with its index. GameSetup
+        /// uses it to dress each one in the equipped skin in that slot's gameplay
+        /// colour, so the count selector previews exactly what the run will show.
+        /// </summary>
+        public System.Action<GameObject, int> decorateSphere;
         
         private float GetRadiusForCount(int count) => count == 1 ? 0f : 1.2f + (count * 0.05f);
         private float GetScaleForCount(int count) => 1.4f - ((count - 1) * 0.15f);
         
         private Coroutine morphCoroutine;
+
+        /// <summary>
+        /// How far the formation reaches from its centre: ring radius plus one
+        /// sphere. Using the full extent rather than the lowest sphere means the
+        /// cluster clears the pad no matter how the rotator has tilted it.
+        /// </summary>
+        private float FormationRadius(int count)
+        {
+            float local = GetRadiusForCount(count) + unitSphereRadius * GetScaleForCount(count);
+            return local * Mathf.Abs(transform.lossyScale.y);
+        }
+
+        private void LateUpdate()
+        {
+            if (!groundToPlane) return;
+            Vector3 p = transform.position;
+            p.y = groundPlaneY + groundGap + FormationRadius(currentCount);
+            transform.position = p;
+        }
         
         // This is called initially by GameSetup to pass the template sphere (which has the equipped skin)
         public void Initialize(GameObject templateSphere, int initialCount)
@@ -32,12 +72,45 @@ namespace TubityWAI
                 newSphere.name = "MorphSphere_" + i;
                 newSphere.SetActive(true);
                 activeSpheres.Add(newSphere);
+                if (decorateSphere != null) decorateSphere(newSphere, i);
             }
             
             // Destroy the template as it's no longer needed
             Destroy(templateSphere);
-            
+
             UpdateSpherePositions(1f); // 1f = fully settled
+            ApplyFadeToAll();
+        }
+
+        /// <summary>Re-dress every live sphere - after the shop equips a different skin.</summary>
+        public void Redecorate()
+        {
+            if (decorateSphere == null) return;
+            for (int i = 0; i < activeSpheres.Count; i++)
+            {
+                if (activeSpheres[i] != null) decorateSphere(activeSpheres[i], i);
+            }
+            ApplyFadeToAll();
+        }
+
+        /// <summary>The sphere-count selector calls this when the browsed count is a
+        /// still-locked block, so the whole formation reads as dimmed/inactive.</summary>
+        public void SetLocked(bool locked)
+        {
+            if (isLocked == locked) return;
+            isLocked = locked;
+            ApplyFadeToAll();
+        }
+
+        private void ApplyFadeToAll()
+        {
+            float amount = isLocked ? 1f : 0f;
+            for (int i = 0; i < activeSpheres.Count; i++)
+            {
+                if (activeSpheres[i] == null) continue;
+                NeonBandSphere bands = activeSpheres[i].GetComponent<NeonBandSphere>();
+                if (bands != null) bands.SetFade(amount);
+            }
         }
 
         public void SetSphereCount(int newCount)
@@ -67,7 +140,12 @@ namespace TubityWAI
                 newSphere.name = "MorphSphere_" + activeSpheres.Count;
                 newSphere.transform.localScale = Vector3.zero;
                 activeSpheres.Add(newSphere);
+                if (decorateSphere != null) decorateSphere(newSphere, activeSpheres.Count - 1);
             }
+
+            // Clones do not inherit a source sphere's MaterialPropertyBlock override,
+            // so re-apply the fade to everyone the instant the new count is known.
+            ApplyFadeToAll();
 
             // Target angles for the new setup
             float targetAngleStep = 360f / targetCount;
@@ -163,6 +241,7 @@ namespace TubityWAI
 
             // Ensure final positions are exact
             UpdateSpherePositions(1f);
+            ApplyFadeToAll();
         }
 
         private void UpdateSpherePositions(float settleAmount)

@@ -61,6 +61,9 @@ namespace TubityWAI
         [Header("Tunnel Settings")]
         public float segmentLength = 50f;
         public float markerInterval = 5f;
+
+        [Tooltip("Tunnel segments kept alive ahead of the player. Higher pushes ring/scenery pop-in further out (segments x segmentLength units).")]
+        public int activeTunnelSegments = 10;
         public Color tunnelBaseColor = new Color(0.04f, 0.02f, 0.08f); // Glossy Dark Purple
         public Color markerColor = new Color(0f, 1f, 1f); // Neon Cyan
 
@@ -76,6 +79,19 @@ namespace TubityWAI
 
         [Tooltip("Tiling multiplier along the length of each segment.")]
         public float gridTilingV = 8f;
+
+        [Header("Attract Hero Stage")]
+        [Tooltip("World Y of the reflective pad surface in attraction mode.")]
+        public float heroPadY = -1.58f;
+        [Tooltip("Radius of the neon band sphere that hovers over the pad.")]
+        public float heroSphereRadius = 0.9f;
+        [Tooltip("Shrinks the sphere-count formation so it clears the hero platform " +
+                 "without the widest arrangement running off the top of the frame.")]
+        public float heroClusterScale = 0.70f;
+        [Tooltip("Distance ahead of the camera. The attract camera runs at a 60 degree " +
+                 "field of view, so this drives how big the hero reads on screen: " +
+                 "14 was about 11% of screen height, 8.5 is about 19%, 6 matches the concept art.")]
+        public float heroDistance = 8.5f;
 
         [Header("Volumetric Light Settings")]
         [Tooltip("Custom color for the volumetric light portal. If left black, it will default to the marker color.")]
@@ -129,7 +145,17 @@ namespace TubityWAI
             {
                 Instance = this;
 
-#if !UNITY_EDITOR
+                // Ensure the GameManager singleton exists before the MainMenu is created so the
+                // skin shop can read persisted TotalCoins / unlocked skins outside of a run.
+                if (GameManager.Instance == null && FindFirstObjectByType<GameManager>() == null)
+                {
+                    GameObject managerObj = new GameObject("GameManager");
+                    managerObj.AddComponent<GameManager>();
+                }
+
+#if !UNITY_EDITOR && UNITY_TVOS
+                // D-pad focus/highlight navigation only makes sense on tvOS; on iOS touch
+                // activates buttons directly and this reticle/focus system must stay off.
                 if (FindFirstObjectByType<TVOSMenuNavigator>() == null)
                 {
                     GameObject navObj = new GameObject("TVOSMenuNavigatorController");
@@ -270,11 +296,22 @@ namespace TubityWAI
             GameManager.Instance.currentSphereCount = chosenCount;
             GameManager.Instance.currentLevelConfig = config;
 
+            if (MusicPlayer.Instance != null)
+            {
+                MusicPlayer.Instance.PlayGameplayMusic(config.environment);
+            }
+
+            // Themed environment palette (null for the classic neon tunnel). The manager itself is
+            // created after the lighting pass below so its sky/fog/light settings win.
+            EnvironmentManager.Clear();
+            EnvironmentPalette envPalette = EnvironmentPalettes.Get(config.environment);
+
             // 1. Create Materials
             Material tunnelMaterial;
             if (config.isTransparentTube)
             {
-                tunnelMaterial = CreateTransparentMaterial("TransparentTunnelMaterial", new Color(0f, 0.85f, 1f, 0.3f), 0.5f, 0.95f);
+                Color tubeTint = envPalette != null ? envPalette.tubeTint : new Color(0f, 0.85f, 1f, 0.3f);
+                tunnelMaterial = CreateTransparentMaterial("TransparentTunnelMaterial", tubeTint, 0.5f, 0.95f);
             }
             else
             {
@@ -305,6 +342,11 @@ namespace TubityWAI
             {
                 Color gLineColor = config.isTransparentTube ? new Color(0f, 1f, 0.85f, 1f) : gridLineColor;
                 Color tBaseColor = config.isTransparentTube ? new Color(0.01f, 0.02f, 0.06f, 0.3f) : tunnelBaseColor;
+                if (envPalette != null)
+                {
+                    gLineColor = envPalette.tubeGridColor;
+                    tBaseColor = envPalette.tubeBaseColor;
+                }
                 activeTexture = GenerateGridTexture(gLineColor, tBaseColor);
             }
             if (activeTexture != null)
@@ -361,35 +403,37 @@ namespace TubityWAI
                         color = new Color(1f, 0.55f, 0f); // Gauntlet Amber/Orange
                     else if (config.levelNumber == 106)
                         color = new Color(0f, 1f, 0.75f); // Cyber Cyan/Teal
+
+                    if (envPalette != null)
+                        color = envPalette.sphereColor;
                 }
                 
                 Material playerMaterial;
                 int equippedSkin = GameManager.Instance != null ? GameManager.Instance.EquippedSkin : 0;
-                bool isFXSkin = equippedSkin >= 6;
+                SphereSkinCatalog.Skin skin = config.isTestLevel ? null : SphereSkinCatalog.Get(equippedSkin);
 
-                if (config.isTestLevel || (equippedSkin == 1) || isFXSkin)
+                if (skin == null)
                 {
-                    // For Solid Core (1) or FX skins or test levels, we just use a base emissive material (no grid)
+                    // Test levels keep their bare emissive ball; the FX preset below is the look.
                     playerMaterial = CreateEmissiveMaterial("PlayerMaterial_" + i, color, 3.0f, 0.9f);
                 }
                 else
                 {
-                    // Generate texture based on equipped skin
-                    Texture2D skinTex = null;
-                    if (equippedSkin == 0) skinTex = GenerateSphereGridTexture(color * 2.0f, color * 0.15f);
-                    else if (equippedSkin == 2) skinTex = GenerateStripesTexture(color * 2.0f, color * 0.15f);
-                    else if (equippedSkin == 3) skinTex = GenerateCheckerboardTexture(color * 2.0f, color * 0.15f);
-                    else if (equippedSkin == 4) skinTex = GenerateCircuitTexture(color * 2.0f, color * 0.15f);
-                    else if (equippedSkin == 5) skinTex = GenerateDiamondTexture(color * 2.0f, color * 0.15f);
-                    else skinTex = GenerateSphereGridTexture(color * 2.0f, color * 0.15f); // fallback
-
-                    playerMaterial = CreateSphereMaterial("PlayerMaterial_" + i, color, 2.5f, 0.8f, skinTex);
+                    // The ball itself is the skin's dark core. It stays a URP Lit
+                    // material rather than the menu's NeonBandCore so the marker
+                    // pulse in PlayerController can still push its emission.
+                    playerMaterial = CreateSkinCoreMaterial("PlayerMaterial_" + i, color, skin);
                 }
 
                 GameObject sphereObj = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                 sphereObj.name = "PlayerSphere_" + i;
                 sphereObj.transform.SetParent(playerGroup.transform, false);
                 sphereObj.GetComponent<MeshRenderer>().sharedMaterial = playerMaterial;
+
+                if (skin != null)
+                {
+                    AttachSkinBands(sphereObj, skin, color);
+                }
 
                 // Add PlayerSphere component to track color matching
                 PlayerSphere sphereComponent = sphereObj.AddComponent<PlayerSphere>();
@@ -409,26 +453,15 @@ namespace TubityWAI
                 light.range = 7f;
                 light.intensity = 1.5f;
 
-                // Apply FX if it's a test level OR an FX skin is equipped
-                if (config.isTestLevel || isFXSkin)
+                // Test levels showcase the particle presets
+                if (config.isTestLevel)
                 {
                     EnergySphereEffects effects = sphereObj.AddComponent<EnergySphereEffects>();
-                    
-                    if (config.isTestLevel)
-                    {
-                        if (config.levelNumber == 101) effects.preset = EnergySphereEffects.EffectPreset.Plasma;
-                        else if (config.levelNumber == 102) effects.preset = EnergySphereEffects.EffectPreset.Warp;
-                        else if (config.levelNumber == 103) effects.preset = EnergySphereEffects.EffectPreset.Gauntlet;
-                        else if (config.levelNumber == 106) effects.preset = EnergySphereEffects.EffectPreset.City;
-                    }
-                    else
-                    {
-                        // Map shop skins to presets
-                        if (equippedSkin == 6) effects.preset = EnergySphereEffects.EffectPreset.Plasma;
-                        else if (equippedSkin == 7) effects.preset = EnergySphereEffects.EffectPreset.Warp;
-                        else if (equippedSkin == 8) effects.preset = EnergySphereEffects.EffectPreset.Gauntlet;
-                        else if (equippedSkin == 9) effects.preset = EnergySphereEffects.EffectPreset.City;
-                    }
+                    if (config.levelNumber == 101) effects.preset = EnergySphereEffects.EffectPreset.Plasma;
+                    else if (config.levelNumber == 102) effects.preset = EnergySphereEffects.EffectPreset.Warp;
+                    else if (config.levelNumber == 103) effects.preset = EnergySphereEffects.EffectPreset.Gauntlet;
+                    else if (config.levelNumber == 106) effects.preset = EnergySphereEffects.EffectPreset.City;
+                    if (envPalette != null) effects.preset = envPalette.effectPreset;
                 }
 
                 // Position spheres equidistant around the entire 360-degree circle
@@ -513,6 +546,7 @@ namespace TubityWAI
             tunnelGen.segmentLength = segmentLength;
             tunnelGen.radialSegments = radialSegments;
             tunnelGen.markerInterval = markerInterval;
+            tunnelGen.activeSegmentsCount = Mathf.Max(3, activeTunnelSegments);
             tunnelGen.tunnelMaterial = tunnelMaterial;
             tunnelGen.markerMaterial = markerMaterial;
             tunnelGen.coinMaterials = coinMaterials;
@@ -537,10 +571,18 @@ namespace TubityWAI
                 }
             }
 
-            // 6. Setup Bloom Post-Processing
+            // Themed environments: procedural skybox, fog, sun light and ambient particles.
+            // Scenery props are added per tunnel segment by EnvironmentScenery.
+            if (envPalette != null)
+            {
+                EnvironmentManager.Create(envPalette, mainCam);
+            }
+
+            // 6. Setup Bloom Post-Processing (neon bloom levels borrow the attract screen's hotter settings)
             try
             {
-                SetupPostProcessing();
+                if (config.neonBloom) SetupPostProcessing(2.6f, 0.55f, 0.75f);
+                else SetupPostProcessing();
             }
             catch (System.Exception e)
             {
@@ -664,6 +706,75 @@ namespace TubityWAI
             tex.SetPixels(pixels);
             tex.Apply();
             return tex;
+        }
+
+        /// <summary>
+        /// The in-game ball under a skin's ribbons: a dark body carrying a little
+        /// of its gameplay colour, with just enough emission that the marker pulse
+        /// still reads. Stays URP Lit so the sphere light and pulse keep working.
+        /// </summary>
+        private Material CreateSkinCoreMaterial(string name, Color color, SphereSkinCatalog.Skin skin)
+        {
+            Material mat = CreateSafeMaterial(name);
+            Color body = new Color(0.02f, 0.022f, 0.055f) + color * Mathf.Max(skin.CoreBody, 0.03f);
+
+            if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", body);
+            else if (mat.HasProperty("_Color")) mat.SetColor("_Color", body);
+
+            mat.EnableKeyword("_EMISSION");
+            mat.SetColor("_EmissionColor", color * skin.CoreGlow);
+
+            if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", 0.92f);
+            if (mat.HasProperty("_Metallic")) mat.SetFloat("_Metallic", 0.35f);
+            return mat;
+        }
+
+        /// <summary>
+        /// Wind a skin's ribbons around an existing unit-sphere primitive. They go
+        /// on a child so the host keeps its own renderer, collider and material
+        /// for gameplay, and the ribbons can spin independently of it.
+        /// </summary>
+        private void AttachSkinBands(GameObject host, SphereSkinCatalog.Skin skin, Color color)
+        {
+            GameObject skinObj = new GameObject("Skin");
+            skinObj.SetActive(false);              // keep Awake from building a default hero first
+            skinObj.transform.SetParent(host.transform, false);
+
+            NeonBandSphere bands = skinObj.AddComponent<NeonBandSphere>();
+            bands.buildOnAwake = false;
+            bands.buildCore = false;               // the primitive is the ball
+            bands.registerForMirror = false;
+            bands.radius = 0.5f;                   // the primitive's radius in its own space
+            bands.widthScale = 1.15f;
+            bands.spin = new Vector3(0f, 40f, 12f);
+            bands.bandMaterial = Resources.Load<Material>("Attract/Mat_NeonBand");
+            bands.haloMaterial = Resources.Load<Material>("Attract/Mat_NeonBandHalo");
+            if (bands.bandMaterial == null)
+            {
+                Debug.LogWarning("[GameSetup] Attract/Mat_NeonBand missing - player sphere skin will not render.");
+            }
+            bands.ApplySkin(skin, color);
+            skinObj.SetActive(true);
+        }
+
+        /// <summary>
+        /// Dress one sphere of the menu formation in the equipped skin, in the
+        /// gameplay colour of that slot. Handed to AttractionSphereMorpher.
+        /// </summary>
+        private void ApplyEquippedSkin(GameObject sphere, int slot)
+        {
+            NeonBandSphere bands = sphere.GetComponent<NeonBandSphere>();
+            if (bands == null) return;
+            int equipped = GameManager.Instance != null ? GameManager.Instance.EquippedSkin : 0;
+            Color colour = sphereColors[slot % sphereColors.Length];
+            bands.ApplySkin(SphereSkinCatalog.Get(equipped), colour);
+        }
+
+        /// <summary>The shop just equipped something else: re-dress the count selector.</summary>
+        public void RefreshMenuSkinPreview()
+        {
+            AttractionSphereMorpher morpher = FindFirstObjectByType<AttractionSphereMorpher>(FindObjectsInactive.Include);
+            if (morpher != null) morpher.Redecorate();
         }
 
         private Material CreateSphereMaterial(string name, Color color, float emissionIntensity, float smoothness, Texture2D tex)
@@ -996,6 +1107,11 @@ namespace TubityWAI
 
         public void StartAttractionMode()
         {
+            if (MusicPlayer.Instance != null)
+            {
+                MusicPlayer.Instance.PlayMenuAmbient();
+            }
+
             // Clean up any existing attraction containers first (safety check)
             GameObject oldWorld = GameObject.Find("AttractionModeWorldContainer");
             if (oldWorld != null) DestroyImmediate(oldWorld);
@@ -1129,53 +1245,35 @@ namespace TubityWAI
             GameObject sphereCluster = new GameObject("AttractionCoreSphereCluster");
             sphereCluster.transform.SetParent(worldContainer.transform, false);
             // Sits directly on the road at Y = -2.0
-            sphereCluster.transform.position = new Vector3(0f, -0.5f, 14f);
+            // sits on the hero platform, so the selector reads as the same stage
+            sphereCluster.transform.position = new Vector3(0f, -0.5f, heroDistance);
+            sphereCluster.transform.localScale = Vector3.one * heroClusterScale;
 
-            // Create a template sphere to pass to the morpher
-            GameObject templateSphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            DestroyImmediate(templateSphere.GetComponent<Collider>());
-            
-            MeshRenderer sphereRenderer = templateSphere.GetComponent<MeshRenderer>();
-            sphereRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            sphereRenderer.receiveShadows = false;
-
-            // Apply equipped skin to the template sphere
-            int equippedSkin = GameManager.Instance != null ? GameManager.Instance.EquippedSkin : 0;
-            bool isFXSkin = equippedSkin >= 6;
-            Material templateMat;
-            Color templateColor = new Color(1f, 0.4f, 0f); // Default Neon Orange for template
-
-            if ((equippedSkin == 1) || isFXSkin)
-            {
-                templateMat = CreateEmissiveMaterial("TemplateMaterial", templateColor, 3.0f, 0.9f);
-            }
-            else
-            {
-                Texture2D skinTex = null;
-                if (equippedSkin == 0) skinTex = GenerateSphereGridTexture(templateColor * 2.0f, templateColor * 0.15f);
-                else if (equippedSkin == 2) skinTex = GenerateStripesTexture(templateColor * 2.0f, templateColor * 0.15f);
-                else if (equippedSkin == 3) skinTex = GenerateCheckerboardTexture(templateColor * 2.0f, templateColor * 0.15f);
-                else if (equippedSkin == 4) skinTex = GenerateCircuitTexture(templateColor * 2.0f, templateColor * 0.15f);
-                else if (equippedSkin == 5) skinTex = GenerateDiamondTexture(templateColor * 2.0f, templateColor * 0.15f);
-                else skinTex = GenerateSphereGridTexture(templateColor * 2.0f, templateColor * 0.15f); // fallback
-
-                templateMat = CreateSphereMaterial("TemplateMaterial", templateColor, 2.5f, 0.8f, skinTex);
-            }
-            
-            sphereRenderer.sharedMaterial = templateMat;
-
-            // Attach FX if equipped
-            if (isFXSkin)
-            {
-                EnergySphereEffects effects = templateSphere.AddComponent<EnergySphereEffects>();
-                if (equippedSkin == 6) effects.preset = EnergySphereEffects.EffectPreset.Plasma;
-                else if (equippedSkin == 7) effects.preset = EnergySphereEffects.EffectPreset.Warp;
-                else if (equippedSkin == 8) effects.preset = EnergySphereEffects.EffectPreset.Gauntlet;
-                else if (equippedSkin == 9) effects.preset = EnergySphereEffects.EffectPreset.City;
-            }
+            // The morpher clones this template. It is the same wound-band sphere
+            // as the attract-screen hero, so the count selector reads as the hero
+            // splitting apart rather than as a different object.
+            //
+            // Built once here and cloned with buildOnAwake off, so all five share
+            // one mesh instead of generating five identical ones.
+            GameObject templateSphere = new GameObject("NeonBandTemplate");
+            NeonBandSphere bandTemplate = templateSphere.AddComponent<NeonBandSphere>();
+            bandTemplate.buildOnAwake = false;
+            bandTemplate.radius = heroSphereRadius * 0.55f;
+            bandTemplate.widthScale = 1.15f;      // slightly bolder at this size
+            bandTemplate.spin = new Vector3(0f, 22f, 6f);
+            bandTemplate.bandMaterial = Resources.Load<Material>("Attract/Mat_NeonBand");
+            bandTemplate.haloMaterial = Resources.Load<Material>("Attract/Mat_NeonBandHalo");
+            bandTemplate.coreMaterial = Resources.Load<Material>("Attract/Mat_NeonBandCore");
+            bandTemplate.Build();
 
             // Initialize Morpher
             AttractionSphereMorpher morpher = sphereCluster.AddComponent<AttractionSphereMorpher>();
+            morpher.groundToPlane = true;
+            morpher.groundPlaneY = heroPadY;
+            morpher.unitSphereRadius = bandTemplate.radius;
+            // every sphere in the formation wears the equipped skin in the colour
+            // that slot will have in the run - the selector doubles as the fitting room
+            morpher.decorateSphere = ApplyEquippedSkin;
             int lastSpheres = GameManager.lastSphereCount > 0 ? GameManager.lastSphereCount : 3;
             morpher.Initialize(templateSphere, lastSpheres);
 
@@ -1183,9 +1281,44 @@ namespace TubityWAI
             AttractionModeRotator clusterRotator = sphereCluster.AddComponent<AttractionModeRotator>();
             clusterRotator.rotationSpeed = new Vector3(15f, 30f, 10f);
             clusterRotator.followCameraZ = true;
-            clusterRotator.followOffsetZ = 14f;
+            clusterRotator.followOffsetZ = heroDistance;
+
+            // 7. Attract-screen hero: neon band sphere on a reflective pad
+            //
+            // This is the menu centrepiece only - the skin cluster above stays in
+            // the scene and takes over when PLAY opens the sphere-count selector,
+            // so the shop still previews what the player bought.
+            GameObject heroObj = new GameObject("AttractHeroStage");
+            heroObj.transform.SetParent(worldContainer.transform, false);
+            heroObj.transform.position = new Vector3(0f, heroPadY, heroDistance);
+
+            AttractHeroStage hero = heroObj.AddComponent<AttractHeroStage>();
+            hero.sphereRadius = heroSphereRadius;
+            hero.bandMaterial = Resources.Load<Material>("Attract/Mat_NeonBand");
+            hero.bandMirrorMaterial = Resources.Load<Material>("Attract/Mat_NeonBandMirror");
+            hero.bandHaloMaterial = Resources.Load<Material>("Attract/Mat_NeonBandHalo");
+            hero.coreMaterial = Resources.Load<Material>("Attract/Mat_NeonBandCore");
+            hero.platformMaterial = Resources.Load<Material>("Attract/Mat_HeroPlatform");
+            hero.skirtMaterial = Resources.Load<Material>("Attract/Mat_HeroPlatformSkirt");
+            if (hero.bandMaterial == null || hero.platformMaterial == null)
+            {
+                Debug.LogWarning("[GameSetup] Attract hero materials missing from " +
+                                 "Assets/Resources/Attract - the pad will render untextured.");
+            }
+            hero.Build();
+
+            AttractionModeRotator heroFollow = heroObj.AddComponent<AttractionModeRotator>();
+            heroFollow.followCameraZ = true;
+            heroFollow.followOffsetZ = heroDistance;
+
+            // the menu starts on the top level, where the hero is the centrepiece
+            sphereCluster.SetActive(false);
 
             // 8. Setup Subtle Dust Starfield Particles (Camera Space, scrolling and wrapping)
+            // Two shared materials (not one per star): identical small spheres with the
+            // same material can batch, whereas 200 unique material instances cannot.
+            Material starMatCyan = CreateEmissiveMaterial("StarMat_Cyan", new Color(0f, 1f, 1f), 2.5f, 0f);
+            Material starMatMagenta = CreateEmissiveMaterial("StarMat_Magenta", new Color(1f, 0f, 0.5f), 2.5f, 0f);
             for (int i = 0; i < 200; i++) // Increased to 200 particles
             {
                 GameObject star = GameObject.CreatePrimitive(PrimitiveType.Sphere);
@@ -1203,9 +1336,12 @@ namespace TubityWAI
                 DestroyImmediate(star.GetComponent<Collider>());
 
                 // Match star color randomly to the neon arc colors (Cyan or Neon Magenta/Pink)
-                Color starColor = (Random.value < 0.5f) ? new Color(0f, 1f, 1f) : new Color(1f, 0f, 0.5f);
-                Material starMat = CreateEmissiveMaterial("StarMat_" + i, starColor, 2.5f, 0f);
-                star.GetComponent<MeshRenderer>().sharedMaterial = starMat;
+                MeshRenderer starRenderer = star.GetComponent<MeshRenderer>();
+                starRenderer.sharedMaterial = (Random.value < 0.5f) ? starMatCyan : starMatMagenta;
+                starRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                starRenderer.receiveShadows = false;
+                starRenderer.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
+                starRenderer.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
 
                 // Scrolling Z speed to move stars past the camera
                 AttractionModeRotator starScroll = star.AddComponent<AttractionModeRotator>();

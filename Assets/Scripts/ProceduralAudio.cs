@@ -14,82 +14,166 @@ namespace TubityWAI
         private static AudioClip speedDownClip;
         private static AudioClip magnetOnClip;
         private static AudioClip magnetOffClip;
+        private static AudioClip menuForwardClip;
+        private static AudioClip menuBackClip;
+        private static AudioClip menuCloseClip;
+        private static AudioClip menuSelectClip;
+
+        private static AudioClip[] coinVariantClips;
+
+        // Real recorded clips live in Assets/Resources/SFX and take priority; the
+        // synthesized tones below only fire if a clip is missing from that folder.
+        private static AudioClip LoadSfx(string name)
+        {
+            return Resources.Load<AudioClip>("SFX/" + name);
+        }
 
         public static AudioClip GetCoinSound()
         {
-            if (coinClip != null) return coinClip;
+            if (coinVariantClips == null)
+            {
+                var variants = new System.Collections.Generic.List<AudioClip>();
+                AudioClip main = LoadSfx("Coin");
+                AudioClip alt = LoadSfx("CoinAlt");
+                if (main != null) variants.Add(main);
+                if (alt != null) variants.Add(alt);
+                coinVariantClips = variants.ToArray();
+            }
+            if (coinVariantClips.Length > 0)
+            {
+                return coinVariantClips[Random.Range(0, coinVariantClips.Length)];
+            }
             // High-tech, pleasant blip/chirp
-            coinClip = CreateCyberBlip(0.15f, 1800f, 600f, 0.35f);
+            if (coinClip == null) coinClip = CreateCyberBlip(0.15f, 1800f, 600f, 0.35f);
             return coinClip;
         }
 
         public static AudioClip GetAcceptSound()
         {
-            if (acceptClip != null) return acceptClip;
+            AudioClip real = LoadSfx("Accept");
+            if (real != null) return real;
             // Synthwave minor 7th chord (A4, E5, G5)
-            acceptClip = CreateCyberChord(0.4f, new float[] { 440.00f, 659.25f, 783.99f }, 0.35f);
+            if (acceptClip == null) acceptClip = CreateCyberChord(0.4f, new float[] { 440.00f, 659.25f, 783.99f }, 0.35f);
             return acceptClip;
         }
 
         public static AudioClip GetJumpSound()
         {
-            if (jumpClip != null) return jumpClip;
+            AudioClip real = LoadSfx("Jump");
+            if (real != null) return real;
             // Bass-heavy zap/whoosh
-            jumpClip = CreateZap(0.2f, 300f, 80f, 0.3f);
+            if (jumpClip == null) jumpClip = CreateZap(0.2f, 300f, 80f, 0.3f);
             return jumpClip;
         }
 
         public static AudioClip GetDoubleJumpSound()
         {
-            if (doubleJumpClip != null) return doubleJumpClip;
+            AudioClip real = LoadSfx("DoubleJump");
+            if (real != null) return real;
             // Higher zap
-            doubleJumpClip = CreateZap(0.25f, 450f, 120f, 0.3f);
+            if (doubleJumpClip == null) doubleJumpClip = CreateZap(0.25f, 450f, 120f, 0.3f);
             return doubleJumpClip;
         }
 
         public static AudioClip GetSpeedUpSound()
         {
-            if (speedUpClip != null) return speedUpClip;
-            speedUpClip = CreateFMSweep(0.6f, 150f, 600f, 0.3f);
+            AudioClip real = LoadSfx("SpeedUp");
+            if (real != null) return real;
+            if (speedUpClip == null) speedUpClip = CreateFMSweep(0.6f, 150f, 600f, 0.3f);
             return speedUpClip;
         }
 
         public static AudioClip GetSpeedDownSound()
         {
-            if (speedDownClip != null) return speedDownClip;
-            speedDownClip = CreateFMSweep(0.6f, 600f, 150f, 0.3f);
+            AudioClip real = LoadSfx("SpeedDown");
+            if (real != null) return real;
+            if (speedDownClip == null) speedDownClip = CreateFMSweep(0.6f, 600f, 150f, 0.3f);
             return speedDownClip;
         }
 
         public static AudioClip GetMagnetOnSound()
         {
-            if (magnetOnClip != null) return magnetOnClip;
-            magnetOnClip = CreatePulsingTone(0.6f, 300f, 0.3f, true);
+            AudioClip real = LoadSfx("MagnetOn");
+            if (real != null) return real;
+            if (magnetOnClip == null) magnetOnClip = CreatePulsingTone(0.6f, 300f, 0.3f, true);
             return magnetOnClip;
         }
 
         public static AudioClip GetMagnetOffSound()
         {
-            if (magnetOffClip != null) return magnetOffClip;
-            magnetOffClip = CreatePulsingTone(0.6f, 300f, 0.3f, false);
+            AudioClip real = LoadSfx("MagnetOff");
+            if (real != null) return real;
+            if (magnetOffClip == null) magnetOffClip = CreatePulsingTone(0.6f, 300f, 0.3f, false);
             return magnetOffClip;
         }
 
         public static AudioClip GetCrashSound()
         {
-            if (crashClip != null) return crashClip;
-            crashClip = CreateHeavyNoise(0.8f, 0.5f, 3f);
+            AudioClip real = LoadSfx("Crash");
+            if (real != null)
+            {
+                Debug.Log("[ProceduralAudio] Crash: using real clip '" + real.name + "' (length " + real.length + "s, channels " + real.channels + ").");
+                return real;
+            }
+            Debug.LogWarning("[ProceduralAudio] Crash: Resources.Load(\"SFX/Crash\") returned null, using procedural fallback.");
+            if (crashClip == null) crashClip = CreateHeavyNoise(0.8f, 0.5f, 3f);
             return crashClip;
         }
 
         public static AudioClip GetBreakSound()
         {
-            if (breakClip != null) return breakClip;
-            breakClip = CreateHeavyNoise(0.3f, 0.4f, 8f);
+            AudioClip real = LoadSfx("Break");
+            if (real != null) return real;
+            if (breakClip == null) breakClip = CreateHeavyNoise(0.3f, 0.4f, 8f);
             return breakClip;
         }
 
-        // --- SYNTHESIS METHODS ---
+        // --- MENU UI SOUNDS ---
+        // Named by navigation intent rather than by button, so any button that advances
+        // a layer, retreats one, dismisses an overlay entirely, or just changes a value
+        // in place sounds consistent across the whole menu system.
+
+        /// <summary>Advancing deeper into the menu flow (opening a submenu, confirming, launching a level).</summary>
+        public static AudioClip GetMenuForwardSound()
+        {
+            AudioClip real = LoadSfx("MenuForward");
+            if (real != null) return real;
+            // Quick ascending sweep - reads as "moving into" a screen
+            if (menuForwardClip == null) menuForwardClip = CreateFMSweep(0.12f, 500f, 1100f, 0.25f);
+            return menuForwardClip;
+        }
+
+        /// <summary>Retreating to the previous layer (a screen's own Back button).</summary>
+        public static AudioClip GetMenuBackSound()
+        {
+            AudioClip real = LoadSfx("MenuBack");
+            if (real != null) return real;
+            // Quick descending sweep - the mirror image of Forward
+            if (menuBackClip == null) menuBackClip = CreateFMSweep(0.12f, 900f, 400f, 0.22f);
+            return menuBackClip;
+        }
+
+        /// <summary>Dismissing an overlay entirely (closing a popup, not just stepping back a layer).</summary>
+        public static AudioClip GetMenuCloseSound()
+        {
+            AudioClip real = LoadSfx("MenuClose");
+            if (real != null) return real;
+            // Low, damped thump - more final than Back
+            if (menuCloseClip == null) menuCloseClip = CreateZap(0.16f, 260f, 90f, 0.3f);
+            return menuCloseClip;
+        }
+
+        /// <summary>Choosing or toggling a value without changing layers (tabs, paging, list items).</summary>
+        public static AudioClip GetMenuSelectSound()
+        {
+            AudioClip real = LoadSfx("MenuSelect");
+            if (real != null) return real;
+            // Light neutral tick
+            if (menuSelectClip == null) menuSelectClip = CreateCyberBlip(0.08f, 1200f, 1000f, 0.2f);
+            return menuSelectClip;
+        }
+
+        // --- SYNTHESIS METHODS (fallback only, used when a real clip is missing) ---
 
         private static AudioClip CreateCyberBlip(float duration, float startFreq, float endFreq, float maxVol)
         {

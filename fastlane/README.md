@@ -23,13 +23,23 @@ For _fastlane_ installation instructions, see [Installing _fastlane_](https://do
 
 Create App Store Connect Record
 
+### ios create_iaps
+
+```sh
+[bundle exec] fastlane ios create_iaps
+```
+
+Create Remove Ads In-App Purchase
+
+Create every In-App Purchase in IAP_PRODUCTS on App Store Connect
+
 ### ios create_remove_ads_iap
 
 ```sh
 [bundle exec] fastlane ios create_remove_ads_iap
 ```
 
-Create Remove Ads In-App Purchase
+
 
 ### ios create_achievements
 

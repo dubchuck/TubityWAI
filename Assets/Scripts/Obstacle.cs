@@ -17,6 +17,24 @@ namespace TubityWAI
         public bool isColorCoded = false;
         public int targetColorIndex = -1; // -1 represents solid hazard (dangerous to all)
 
+        [Header("Colour Shift Settings")]
+        [Tooltip("When set (2+ entries) the arc cycles which sphere colour it accepts every colorShiftInterval seconds.")]
+        public Material[] colorShiftMaterials;
+        public float colorShiftInterval = 0f;
+        [Tooltip("Seed for the colour sequence, set by the spawner so the shifts repeat run to run.")]
+        public int colorShiftSeed = 0;
+        private float colorShiftTimer = 0f;
+        private System.Random shiftRng;
+
+        [Header("Neon Halo (optional)")]
+        [Tooltip("Additive ribbon material (TubityX/NeonBandHalo) drawn as a soft cloud around the arc's face. Null = no halo.")]
+        public Material haloMaterial;
+        [Tooltip("How far the halo cloud reaches beyond the arc, in tube units.")]
+        public float haloPadding = 0.6f;
+        private GameObject haloObj;
+        private Mesh haloMesh;
+        private float[] haloFade;
+
         // Pass-through animation states
         private bool isPassingThrough = false;
         private float passTimer = 0f;
@@ -32,10 +50,140 @@ namespace TubityWAI
         {
             GenerateMesh();
             CreateCompoundTriggers();
+            if (haloMaterial != null)
+            {
+                BuildHalo();
+            }
+        }
+
+        private void OnDestroy()
+        {
+            if (haloMesh != null) Destroy(haloMesh);
+        }
+
+        /// <summary>
+        /// A flat annular-sector ribbon just in front of the arc's face, tinted by vertex colour
+        /// and shaded by TubityX/NeonBandHalo: a gaussian across the ribbon (uv.y) that peaks on
+        /// the arc and fades to nothing haloPadding beyond it, with the angular ends feathered
+        /// through the vertex colour. This is the same neon "cloud" the attract sphere uses.
+        /// </summary>
+        private void BuildHalo()
+        {
+            float halfDepth = depth * 0.5f;
+            float rMid = radius - thickness * 0.5f;
+            float halfWidth = thickness * 0.5f + haloPadding;
+            float inner = Mathf.Max(0.05f, rMid - halfWidth);
+            float outer = rMid + halfWidth;
+            float padDeg = Mathf.Min(45f, haloPadding / Mathf.Max(0.1f, rMid) * Mathf.Rad2Deg);
+            const int padSteps = 3;
+            int steps = radialSegments + padSteps * 2;
+
+            int vertCount = (steps + 1) * 3;
+            Vector3[] verts = new Vector3[vertCount];
+            Vector2[] uvs = new Vector2[vertCount];
+            haloFade = new float[vertCount];
+            float z = -halfDepth - 0.02f;
+
+            for (int i = 0; i <= steps; i++)
+            {
+                float deg;
+                if (i < padSteps) deg = -padDeg + padDeg * (i / (float)padSteps);
+                else if (i <= padSteps + radialSegments) deg = arcAngle * ((i - padSteps) / (float)radialSegments);
+                else deg = arcAngle + padDeg * ((i - padSteps - radialSegments) / (float)padSteps);
+
+                float fade = 1f;
+                if (deg < 0f || deg > arcAngle)
+                {
+                    float d = (deg < 0f ? -deg : deg - arcAngle) / Mathf.Max(0.01f, padDeg);
+                    fade = Mathf.Exp(-(d * 2.1f) * (d * 2.1f));
+                }
+
+                float rad = deg * Mathf.Deg2Rad;
+                float sin = Mathf.Sin(rad);
+                float cos = -Mathf.Cos(rad);
+                int b = i * 3;
+                verts[b + 0] = new Vector3(sin * inner, cos * inner, z);
+                verts[b + 1] = new Vector3(sin * rMid, cos * rMid, z);
+                verts[b + 2] = new Vector3(sin * outer, cos * outer, z);
+                uvs[b + 0] = new Vector2(0f, 0f);
+                uvs[b + 1] = new Vector2(0f, 0.5f);
+                uvs[b + 2] = new Vector2(0f, 1f);
+                haloFade[b + 0] = fade; haloFade[b + 1] = fade; haloFade[b + 2] = fade;
+            }
+
+            int[] tris = new int[steps * 12];
+            int t = 0;
+            for (int i = 0; i < steps; i++)
+            {
+                int a = i * 3;
+                int c = a + 3;
+                tris[t++] = a; tris[t++] = a + 1; tris[t++] = c + 1;
+                tris[t++] = a; tris[t++] = c + 1; tris[t++] = c;
+                tris[t++] = a + 1; tris[t++] = a + 2; tris[t++] = c + 2;
+                tris[t++] = a + 1; tris[t++] = c + 2; tris[t++] = c + 1;
+            }
+
+            haloMesh = new Mesh();
+            haloMesh.name = "ArcHalo";
+            haloMesh.vertices = verts;
+            haloMesh.uv = uvs;
+            haloMesh.triangles = tris;
+            haloMesh.RecalculateBounds();
+
+            haloObj = new GameObject("Halo", typeof(MeshFilter), typeof(MeshRenderer));
+            haloObj.transform.SetParent(this.transform, false);
+            haloObj.GetComponent<MeshFilter>().sharedMesh = haloMesh;
+            MeshRenderer hr = haloObj.GetComponent<MeshRenderer>();
+            hr.sharedMaterial = haloMaterial;
+            hr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            hr.receiveShadows = false;
+            hr.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
+            hr.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
+
+            RefreshHaloColours();
+        }
+
+        /// <summary>The arc's own hue at unit brightness, read from its material (emission first).</summary>
+        private Color HaloColour()
+        {
+            Color c = Color.white;
+            if (obstacleMaterial != null)
+            {
+                if (obstacleMaterial.HasProperty("_EmissionColor")) c = obstacleMaterial.GetColor("_EmissionColor");
+                else if (obstacleMaterial.HasProperty("_BaseColor")) c = obstacleMaterial.GetColor("_BaseColor");
+                else if (obstacleMaterial.HasProperty("_Color")) c = obstacleMaterial.GetColor("_Color");
+            }
+            float m = Mathf.Max(c.r, Mathf.Max(c.g, c.b));
+            if (m > 0.0001f) { c.r /= m; c.g /= m; c.b /= m; }
+            c.a = 1f;
+            return c;
+        }
+
+        private void RefreshHaloColours()
+        {
+            if (haloMesh == null || haloFade == null) return;
+            Color col = HaloColour();
+            Color[] cols = new Color[haloFade.Length];
+            for (int i = 0; i < cols.Length; i++)
+            {
+                cols[i] = new Color(col.r * haloFade[i], col.g * haloFade[i], col.b * haloFade[i], 1f);
+            }
+            haloMesh.colors = cols;
         }
 
         private void Update()
         {
+            if (!isPassingThrough && isColorCoded && colorShiftInterval > 0f
+                && colorShiftMaterials != null && colorShiftMaterials.Length > 1)
+            {
+                colorShiftTimer += Time.deltaTime;
+                if (colorShiftTimer >= colorShiftInterval)
+                {
+                    colorShiftTimer = 0f;
+                    ShiftColor();
+                }
+            }
+
             if (isPassingThrough)
             {
                 passTimer += Time.deltaTime;
@@ -185,9 +333,13 @@ namespace TubityWAI
             mesh.RecalculateBounds();
 
             GetComponent<MeshFilter>().sharedMesh = mesh;
-            
+
             // Assign material and instantiate it for runtime animation support
             MeshRenderer renderer = GetComponent<MeshRenderer>();
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            renderer.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
+            renderer.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
             if (renderer != null && obstacleMaterial != null)
             {
                 matInstance = renderer.material = new Material(obstacleMaterial);
@@ -282,6 +434,7 @@ namespace TubityWAI
                         player.AddScore(3);
                         player.PlaySound(ProceduralAudio.GetAcceptSound());
                     }
+                    if (GameManager.Instance != null) GameManager.Instance.RegisterShieldPassed();
 
                     // Trigger pass-through shrink & dissolve animation into player sphere center
                     StartPassThroughAnimation(sphere.transform);
@@ -301,6 +454,57 @@ namespace TubityWAI
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// Warning look driven by RingArcGroup ahead of a snap turn: 0 restores the normal
+        /// colours, 1 pushes the emission to a hot white flash. Ignored once the arc is being
+        /// collected or shattered.
+        /// </summary>
+        public void SetTelegraph(float strength)
+        {
+            if (isPassingThrough || matInstance == null) return;
+            strength = Mathf.Clamp01(strength);
+
+            if (matInstance.HasProperty("_EmissionColor"))
+            {
+                float peak = Mathf.Max(baseEmissionColor.r, Mathf.Max(baseEmissionColor.g, baseEmissionColor.b));
+                float hotIntensity = Mathf.Max(1f, peak * 1.6f);
+                Color hot = new Color(hotIntensity, hotIntensity, hotIntensity, 1f);
+                matInstance.SetColor("_EmissionColor", Color.Lerp(baseEmissionColor, hot, strength));
+            }
+            if (matInstance.HasProperty("_BaseColor"))
+            {
+                Color c = Color.Lerp(baseColor, Color.white, strength * 0.6f);
+                c.a = baseColor.a;
+                matInstance.SetColor("_BaseColor", c);
+            }
+        }
+
+        /// <summary>Switch this colour-coded arc to a different accepted colour (never the current one).</summary>
+        private void ShiftColor()
+        {
+            int count = colorShiftMaterials.Length;
+            int current = Mathf.Clamp(targetColorIndex, 0, count - 1);
+            if (shiftRng == null) shiftRng = new System.Random(colorShiftSeed);
+            int next = (current + 1 + shiftRng.Next(0, count - 1)) % count;
+
+            targetColorIndex = next;
+            obstacleMaterial = colorShiftMaterials[next];
+
+            if (matInstance != null && obstacleMaterial != null)
+            {
+                matInstance.CopyPropertiesFromMaterial(obstacleMaterial);
+                if (matInstance.HasProperty("_BaseColor"))
+                {
+                    baseColor = matInstance.GetColor("_BaseColor");
+                }
+                if (matInstance.HasProperty("_EmissionColor"))
+                {
+                    baseEmissionColor = matInstance.GetColor("_EmissionColor");
+                }
+            }
+            RefreshHaloColours();
         }
 
         private void StartPassThroughAnimation(Transform playerSphereTransform)
@@ -327,6 +531,7 @@ namespace TubityWAI
         private void Shatter(Transform playerSphereTransform)
         {
             isPassingThrough = true;
+            if (haloObj != null) haloObj.SetActive(false);   // the cloud has nothing left to wrap
 
             // Disable all child triggers
             for (int i = 0; i < transform.childCount; i++)

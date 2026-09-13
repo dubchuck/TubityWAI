@@ -18,6 +18,8 @@ namespace TubityWAI
         [Header("Pool Settings")]
         [Tooltip("Number of segments to pre-warm and keep active.")]
         public int activeSegmentsCount = 6;
+        [Tooltip("Also build one segment behind z = 0 so the camera, which trails the player, starts inside the tube.")]
+        public bool spawnSegmentBehindStart = true;
 
         [Header("Materials")]
         public Material tunnelMaterial;
@@ -41,6 +43,12 @@ namespace TubityWAI
             if (target == null)
             {
                 target = FindFirstObjectByType<PlayerController>();
+            }
+
+            // Start one segment early so the trailing camera never looks at the tube's open end.
+            if (spawnSegmentBehindStart)
+            {
+                nextSpawnZ = -segmentLength;
             }
 
             // Generate initial set of tunnel segments

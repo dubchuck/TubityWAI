@@ -58,7 +58,21 @@ namespace TubityWAI
         public void OnPointerExit(PointerEventData e) { hovered = false; Refresh(false); }
         public void OnPointerDown(PointerEventData e) { Refresh(true); }
         public void OnPointerUp(PointerEventData e) { Refresh(false); }
-        public void OnSelect(BaseEventData e) { selected = true; Refresh(false); }
-        public void OnDeselect(BaseEventData e) { selected = false; Refresh(false); }
+
+        // D-pad/remote focus highlight is tvOS-only - on every other platform touch
+        // activates buttons directly and must never show a persistent "selected" glow.
+        public void OnSelect(BaseEventData e)
+        {
+#if UNITY_TVOS
+            selected = true; Refresh(false);
+#endif
+        }
+
+        public void OnDeselect(BaseEventData e)
+        {
+#if UNITY_TVOS
+            selected = false; Refresh(false);
+#endif
+        }
     }
 }

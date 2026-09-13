@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.EventSystems;
 using System.Collections.Generic;
 
 namespace TubityWAI
@@ -93,6 +94,12 @@ namespace TubityWAI
         public float InvincibilityTotalTime => INVINCIBILITY_DURATION + REACCLIMATION_DURATION;
 
 
+        // Pre-run countdown: the player can steer to line up but does not travel forward or jump until it ends.
+        public const float COUNTDOWN_DURATION = 3f;
+        public bool IsCountingDown { get; private set; } = false;
+        public float CountdownRemaining { get; private set; } = 0f;
+        private int lastCountdownTick = -1;
+
         // The current angle (theta) around the cylinder axis in radians.
         [HideInInspector]
         public float currentAngle = 0f;
@@ -118,6 +125,10 @@ namespace TubityWAI
         // Landing bounce variables
         private bool isRecovering = false;
         private float recoveryTimer = 0f;
+
+        // Finish-line hero shot: once true, Update() hands sphere transforms over
+        // entirely to PlayFinishBurst() so the two don't fight over localScale/position.
+        private bool isFinishing = false;
 
         private class SphereInfo
         {
@@ -161,6 +172,17 @@ namespace TubityWAI
             audioSource.playOnAwake = false;
             audioSource.spatialBlend = 0f; // 2D sound
             audioSource.volume = 0.8f;
+            audioSource.mute = !GameManager.SfxEnabled;
+
+            // Hold the run for a countdown on every real level. The tutorial drives its own pacing.
+            LevelConfig startConfig = (GameManager.Instance != null) ? GameManager.Instance.currentLevelConfig : null;
+            bool isTutorial = startConfig != null && (startConfig.levelNumber == 99 ||
+                              (startConfig.levelName != null && startConfig.levelName.ToUpper().Contains("HOW TO PLAY")));
+            if (startConfig != null && !isTutorial)
+            {
+                IsCountingDown = true;
+                CountdownRemaining = COUNTDOWN_DURATION;
+            }
 
             // Discover and register all child spheres dynamically
             childSpheres.Clear();
@@ -334,6 +356,11 @@ namespace TubityWAI
             info.baseEmissionColor = palette[ps.colorIndex];
             if (info.material.HasProperty("_EmissionColor"))
                 info.material.SetColor("_EmissionColor", info.baseEmissionColor);
+
+            // The clone brought the first sphere's ribbons along; re-wind them in
+            // this sphere's own colour so the skin keeps the spheres tellable apart.
+            NeonBandSphere bands = newSphereObj.GetComponentInChildren<NeonBandSphere>(true);
+            if (bands != null) bands.SetBaseColour(info.baseEmissionColor);
             
             childSpheres.Add(info);
 
@@ -472,8 +499,92 @@ namespace TubityWAI
             }
         }
 
+        /// <summary>
+        /// End-of-level hero shot: collapses the formation to the center with a
+        /// squash (anticipation), then rockets every sphere forward while it grows
+        /// far past normal size, spinning and flaring brighter as it recedes down
+        /// the tube. Runs on unscaled time so it still plays through the pause the
+        /// caller applies for the review card. Update() bows out for its duration
+        /// (see isFinishing) so nothing overwrites these transforms mid-flight.
+        /// </summary>
+        public System.Collections.IEnumerator PlayFinishBurst()
+        {
+            isFinishing = true;
+
+            if (speedLinesPS != null)
+            {
+                var em = speedLinesPS.emission;
+                em.rateOverTime = 0f;
+            }
+
+            int count = childSpheres.Count;
+            Vector3[] startLocalPos = new Vector3[count];
+            Vector3[] startScale = new Vector3[count];
+            for (int i = 0; i < count; i++)
+            {
+                startLocalPos[i] = childSpheres[i].transform.localPosition;
+                startScale[i] = childSpheres[i].transform.localScale;
+            }
+
+            // Phase 1: collapse to the center, squashing flat sideways - a coiled anticipation beat.
+            const float collapseDuration = 0.18f;
+            float elapsed = 0f;
+            while (elapsed < collapseDuration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float smoothT = Mathf.Clamp01(elapsed / collapseDuration);
+                smoothT = smoothT * smoothT * (3f - 2f * smoothT);
+
+                for (int i = 0; i < count; i++)
+                {
+                    Transform t = childSpheres[i].transform;
+                    t.localPosition = Vector3.Lerp(startLocalPos[i], Vector3.zero, smoothT);
+                    Vector3 s = startScale[i];
+                    t.localScale = new Vector3(s.x * (1f + smoothT * 0.4f), s.y * (1f - smoothT * 0.55f), s.z * (1f + smoothT * 0.4f));
+                }
+                yield return null;
+            }
+
+            // Phase 2: erupt - scale rockets up (relative to the squashed pose above) while
+            // spinning and rushing forward down the tube, brightening like a small nova.
+            const float expandDuration = 0.75f;
+            const float finalScaleMult = 55f;
+            Vector3[] phase2Scale = new Vector3[count];
+            for (int i = 0; i < count; i++) phase2Scale[i] = childSpheres[i].transform.localScale;
+
+            elapsed = 0f;
+            while (elapsed < expandDuration)
+            {
+                float dt = Time.unscaledDeltaTime;
+                elapsed += dt;
+                float t = Mathf.Clamp01(elapsed / expandDuration);
+                float growT = t * t * t; // slow start, rockets by the end
+                float scaleMult = Mathf.Lerp(1f, finalScaleMult, growT);
+
+                for (int i = 0; i < count; i++)
+                {
+                    SphereInfo sphere = childSpheres[i];
+                    Transform st = sphere.transform;
+                    st.localScale = phase2Scale[i] * scaleMult;
+                    st.localPosition += Vector3.forward * (18f * t) * dt;
+                    st.Rotate(new Vector3(0f, 260f, 140f) * dt, Space.Self);
+
+                    if (sphere.material != null && sphere.material.HasProperty("_EmissionColor"))
+                    {
+                        sphere.material.SetColor("_EmissionColor", sphere.baseEmissionColor * Mathf.Lerp(1f, 6f, t));
+                    }
+                }
+                yield return null;
+            }
+
+            if (speedLinesPS != null) speedLinesPS.Stop();
+        }
+
         private void Update()
         {
+            // Handed off to the finish-line burst coroutine - stop touching sphere transforms.
+            if (isFinishing) return;
+
             // Handle shortcut keys to set sphere count (1-5)
             if (UnityEngine.InputSystem.Keyboard.current != null)
             {
@@ -560,6 +671,26 @@ namespace TubityWAI
                 }
             }
 
+            // Pre-run countdown: steering stays live so the player can line up, everything else waits.
+            if (IsCountingDown)
+            {
+                CountdownRemaining -= Time.deltaTime;
+                int tick = Mathf.CeilToInt(CountdownRemaining);
+                if (tick > 0 && tick != lastCountdownTick)
+                {
+                    lastCountdownTick = tick;
+                    PlaySound(ProceduralAudio.GetAcceptSound());
+                }
+                if (CountdownRemaining <= 0f)
+                {
+                    CountdownRemaining = 0f;
+                    IsCountingDown = false;
+                    PlaySound(ProceduralAudio.GetSpeedUpSound());
+                }
+                spacePressed = false;
+                isDownPressed = false;
+            }
+
 
             // 3. Apply steering (independent in-air and on-ground steering)
             float steerAmount = steerInput * angularSpeed * Time.deltaTime;
@@ -577,8 +708,8 @@ namespace TubityWAI
             if (currentAngle < 0f) currentAngle += Mathf.PI * 2f;
             if (currentAngle > Mathf.PI * 2f) currentAngle -= Mathf.PI * 2f;
 
-            // Update forward movement and time elapsed
-            TimeElapsed += Time.deltaTime;
+            // Update forward movement and time elapsed (the clock only runs once the countdown is over)
+            if (!IsCountingDown) TimeElapsed += Time.deltaTime;
             
             // Powerup state machine
             float currentInvincibilityBoost = 1f;
@@ -627,7 +758,7 @@ namespace TubityWAI
                 em.rateOverTime = 200f * InvincibilityEffectStrength;
             }
 
-            float activeSpeed = forwardSpeed * (isDownPressed ? speedBoostMultiplier : 1f) * currentInvincibilityBoost;
+            float activeSpeed = IsCountingDown ? 0f : forwardSpeed * (isDownPressed ? speedBoostMultiplier : 1f) * currentInvincibilityBoost;
             zPos += activeSpeed * Time.deltaTime;
 
             // Get the curve offset at the current zPos
@@ -638,6 +769,13 @@ namespace TubityWAI
                 curveOffset = config.GetCurveOffset(zPos);
             }
             transform.position = new Vector3(curveOffset.x, curveOffset.y, zPos);
+
+            // Crossing the finish gate ends the level
+            if (config != null && config.HasFinish && zPos >= config.levelLength
+                && GameManager.Instance != null && !GameManager.Instance.IsLevelComplete)
+            {
+                GameManager.Instance.LevelComplete();
+            }
 
             // Update Volumetric Light Position ahead of the player relative to curve
             if (volumetricLightTransform != null)
@@ -742,7 +880,12 @@ namespace TubityWAI
             // 5. Detect marker crossings (triggers secondary pulse animation & increments score)
             if (Mathf.Floor(lastZ / markerInterval) != Mathf.Floor(zPos / markerInterval))
             {
-                animationTimer = 0f; // Trigger pulse
+                // Only (re)start the pulse if the last one already finished. At high forward
+                // speed (see LevelProgression's top-end ~36 units/sec) markers can be crossed
+                // faster than animationDuration (0.333s), so resetting unconditionally kept
+                // restarting the sine ramp from 0 mid-flight - a rapid, visible scale sawtooth
+                // on the player sphere that read as it jittering forward and backward.
+                if (animationTimer < 0f) animationTimer = 0f;
                 Score++; // Increment player score
             }
             lastZ = zPos;
@@ -869,6 +1012,15 @@ namespace TubityWAI
                     var touch = touchscreen.touches[i];
                     if (touch.press.isPressed)
                     {
+                        // Taps on the pause button (or any other HUD control) must not
+                        // also steer/jump the player.
+                        if (EventSystem.current != null &&
+                            EventSystem.current.IsPointerOverGameObject(touch.touchId.ReadValue()))
+                        {
+                            touchProcessed = true;
+                            continue;
+                        }
+
                         touchProcessed = true;
                         Vector2 pos = touch.position.ReadValue();
 
@@ -905,7 +1057,8 @@ namespace TubityWAI
                     bool isPressed = mouse.leftButton.isPressed;
                     bool wasPressedThisFrame = mouse.leftButton.wasPressedThisFrame;
 
-                    if (isPressed || wasPressedThisFrame)
+                    if ((isPressed || wasPressedThisFrame) &&
+                        !(EventSystem.current != null && EventSystem.current.IsPointerOverGameObject()))
                     {
                         Vector2 mousePos = mouse.position.ReadValue();
 

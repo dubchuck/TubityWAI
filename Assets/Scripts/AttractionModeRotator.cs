@@ -37,7 +37,17 @@ namespace TubityWAI
                 }
                 transform.localPosition = pos;
             }
+        }
 
+        // Camera Z tracking runs in LateUpdate (paired with CameraController's own
+        // [DefaultExecutionOrder(-100)] LateUpdate) so it reads the camera's position
+        // AFTER it has moved for this frame. Reading it from Update() instead reads
+        // last frame's camera position - a one-frame-stale offset whose error equals
+        // that frame's camera travel, which varies with frame time and reads on
+        // screen as a fine, continuous jitter (worst on objects placed close to the
+        // camera, like the attract-screen hero sphere).
+        private void LateUpdate()
+        {
             if (followCameraZ && Camera.main != null)
             {
                 Vector3 pos = transform.position;
