@@ -67,7 +67,7 @@ namespace TubityWAI
             }
             else
             {
-                if (int.TryParse(PlayerSettings.iOS.buildNumber, out int iosBuildNum))
+                if (long.TryParse(PlayerSettings.iOS.buildNumber, out long iosBuildNum))
                 {
                     PlayerSettings.iOS.buildNumber = (iosBuildNum + 1).ToString();
                     Debug.Log($"[BuildPipeline] Auto-incremented iOS buildNumber to: {PlayerSettings.iOS.buildNumber}");
