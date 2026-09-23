@@ -33,6 +33,7 @@ namespace TubityWAI
         private int selectedWorld = 1;
 
         private const int WorldColumns = 4;
+        private static readonly Vector2 LevelCardSize = new Vector2(264f, 200f);
         private const int LevelColumns = 4;
 
         public bool AnyVisible
@@ -88,7 +89,7 @@ namespace TubityWAI
         private GameObject NewPanel(GameObject layer, out TubityXLabel title, string titleText)
         {
             GameObject panel = GlassUIFactory.CreateGlassmorphicPanel(
-                layer.transform, new Vector2(1320f, 700f), rimColor, new Vector2(0f, 20f));
+                layer.transform, new Vector2(1400f, 780f), rimColor, new Vector2(0f, 20f));
             panel.name = "Panel";
 
             GameObject titleObj = new GameObject("Title", typeof(RectTransform));
@@ -152,6 +153,49 @@ namespace TubityWAI
             return card;
         }
 
+        /// <summary>
+        /// A level card: the level's opening screenshot (LevelThumbnails) in a well across the top,
+        /// with the number and stars, then the level's hook, underneath it.
+        /// </summary>
+        private GameObject MakeLevelCard(Transform parent, Vector2 size, Color border, string name)
+        {
+            GameObject card = MakeCard(parent, size, border, name);
+
+            GameObject thumb = new GameObject("Thumb", typeof(RectTransform));
+            thumb.transform.SetParent(card.transform, false);
+            // Above the card's glass, below the lock badge.
+            thumb.transform.SetSiblingIndex(LockOf(card).transform.GetSiblingIndex());
+            RectTransform thumbRect = thumb.GetComponent<RectTransform>();
+            thumbRect.anchorMin = new Vector2(0f, 0.40f);
+            thumbRect.anchorMax = new Vector2(1f, 1f);
+            thumbRect.offsetMin = new Vector2(12f, 0f);
+            thumbRect.offsetMax = new Vector2(-12f, -12f);
+            RawImage img = thumb.AddComponent<RawImage>();
+            img.raycastTarget = false;
+
+            RectTransform titleRect = card.transform.Find("CardTitle").GetComponent<RectTransform>();
+            titleRect.anchorMin = new Vector2(0f, 0.19f);
+            titleRect.anchorMax = new Vector2(1f, 0.39f);
+            TitleOf(card).CapHeight = 16f;
+
+            RectTransform subRect = card.transform.Find("CardSub").GetComponent<RectTransform>();
+            subRect.anchorMin = new Vector2(0f, 0.04f);
+            subRect.anchorMax = new Vector2(1f, 0.20f);
+
+            // The lock sits on the picture.
+            RectTransform lockRect = LockOf(card).GetComponent<RectTransform>();
+            lockRect.anchorMin = new Vector2(0.5f, 0.70f);
+            lockRect.anchorMax = new Vector2(0.5f, 0.70f);
+
+            return card;
+        }
+
+        private static RawImage ThumbOf(GameObject card)
+        {
+            Transform t = card.transform.Find("Thumb");
+            return t != null ? t.GetComponent<RawImage>() : null;
+        }
+
         private static TubityXLabel TitleOf(GameObject card) { return card.transform.Find("CardTitle").GetComponentInChildren<TubityXLabel>(); }
         private static TubityXLabel SubOf(GameObject card) { return card.transform.Find("CardSub").GetComponentInChildren<TubityXLabel>(); }
         private static GameObject LockOf(GameObject card) { return card.transform.Find("LockIcon").gameObject; }
@@ -166,13 +210,13 @@ namespace TubityWAI
             GameObject grid = new GameObject("WorldGrid", typeof(RectTransform));
             grid.transform.SetParent(panel.transform, false);
             RectTransform gridRect = grid.GetComponent<RectTransform>();
-            gridRect.anchorMin = new Vector2(0.06f, 0.06f);
-            gridRect.anchorMax = new Vector2(0.94f, 0.85f);
+            gridRect.anchorMin = new Vector2(0.08f, 0.08f);
+            gridRect.anchorMax = new Vector2(0.92f, 0.84f);
             gridRect.sizeDelta = Vector2.zero;
 
             GridLayoutGroup layout = grid.AddComponent<GridLayoutGroup>();
             layout.cellSize = new Vector2(270f, 108f);
-            layout.spacing = new Vector2(22f, 18f);
+            layout.spacing = new Vector2(30f, 24f);
             layout.childAlignment = TextAnchor.MiddleCenter;
             layout.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
             layout.constraintCount = WorldColumns;
@@ -197,13 +241,13 @@ namespace TubityWAI
             GameObject grid = new GameObject("LevelGrid", typeof(RectTransform));
             grid.transform.SetParent(panel.transform, false);
             RectTransform gridRect = grid.GetComponent<RectTransform>();
-            gridRect.anchorMin = new Vector2(0.08f, 0.14f);
-            gridRect.anchorMax = new Vector2(0.92f, 0.82f);
+            gridRect.anchorMin = new Vector2(0.08f, 0.10f);
+            gridRect.anchorMax = new Vector2(0.92f, 0.84f);
             gridRect.sizeDelta = Vector2.zero;
 
             GridLayoutGroup layout = grid.AddComponent<GridLayoutGroup>();
-            layout.cellSize = new Vector2(250f, 118f);
-            layout.spacing = new Vector2(34f, 26f);
+            layout.cellSize = LevelCardSize;
+            layout.spacing = new Vector2(36f, 32f);
             layout.childAlignment = TextAnchor.MiddleCenter;
             layout.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
             layout.constraintCount = LevelColumns;
@@ -211,7 +255,7 @@ namespace TubityWAI
             for (int i = 0; i < ProgressionV2.LevelsPerWorld; i++)
             {
                 Color border = (i % 2 == 0) ? rimColor : accentColor;
-                GameObject card = MakeCard(grid.transform, new Vector2(250f, 118f), border, "LevelCard_" + i);
+                GameObject card = MakeLevelCard(grid.transform, LevelCardSize, border, "LevelCard_" + i);
                 levelCards.Add(card);
             }
 
@@ -228,13 +272,13 @@ namespace TubityWAI
             GameObject grid = new GameObject("EndlessGrid", typeof(RectTransform));
             grid.transform.SetParent(panel.transform, false);
             RectTransform gridRect = grid.GetComponent<RectTransform>();
-            gridRect.anchorMin = new Vector2(0.06f, 0.08f);
-            gridRect.anchorMax = new Vector2(0.94f, 0.84f);
+            gridRect.anchorMin = new Vector2(0.08f, 0.08f);
+            gridRect.anchorMax = new Vector2(0.92f, 0.84f);
             gridRect.sizeDelta = Vector2.zero;
 
             GridLayoutGroup layout = grid.AddComponent<GridLayoutGroup>();
-            layout.cellSize = new Vector2(380f, 140f);
-            layout.spacing = new Vector2(28f, 24f);
+            layout.cellSize = new Vector2(360f, 140f);
+            layout.spacing = new Vector2(36f, 30f);
             layout.childAlignment = TextAnchor.UpperCenter;
             layout.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
             layout.constraintCount = 3;
@@ -243,7 +287,7 @@ namespace TubityWAI
             for (int i = 0; i < all.Count; i++)
             {
                 Color border = (i % 2 == 0) ? rimColor : accentColor;
-                GameObject card = MakeCard(grid.transform, new Vector2(380f, 140f), border, "EndlessCard_" + i);
+                GameObject card = MakeCard(grid.transform, new Vector2(360f, 140f), border, "EndlessCard_" + i);
 
                 // The blurb gets its own, wider line under the title.
                 TubityXLabel sub = SubOf(card);
@@ -350,6 +394,18 @@ namespace TubityWAI
                 }
 
                 LockOf(card).SetActive(!unlocked);
+
+                // The level's opening, dimmed while it is locked. Until thumbnails have been
+                // captured the well is just a dark frame.
+                RawImage thumb = ThumbOf(card);
+                if (thumb != null)
+                {
+                    Texture2D shot = LevelThumbnails.Get(levelNumber);
+                    thumb.texture = shot;
+                    thumb.color = shot == null ? new Color(0.05f, 0.06f, 0.11f, 0.9f)
+                                : unlocked ? Color.white
+                                : new Color(0.30f, 0.30f, 0.36f, 1f);
+                }
 
                 Button button = card.GetComponent<Button>();
                 button.interactable = unlocked;

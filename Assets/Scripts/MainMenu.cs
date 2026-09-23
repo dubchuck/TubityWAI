@@ -773,7 +773,7 @@ namespace TubityWAI
             l2Rect.anchorMax = Vector2.one;
             l2Rect.sizeDelta = Vector2.zero;
 
-            GameObject l2Panel = GlassUIFactory.CreateGlassmorphicPanel(layer2Obj.transform, new Vector2(1240f, 640f), borderNeonColor, new Vector2(0f, 40f));
+            GameObject l2Panel = GlassUIFactory.CreateGlassmorphicPanel(layer2Obj.transform, new Vector2(1340f, 720f), borderNeonColor, new Vector2(0f, 30f));
             l2Panel.name = "L2_Panel";
 
             // Title indicator text
@@ -790,37 +790,47 @@ namespace TubityWAI
             GameObject l2GridObj = new GameObject("L2_Grid");
             l2GridObj.transform.SetParent(l2Panel.transform, false);
             RectTransform l2GridRect = l2GridObj.AddComponent<RectTransform>();
-            l2GridRect.anchorMin = new Vector2(0.08f, 0.08f);
-            l2GridRect.anchorMax = new Vector2(0.92f, 0.83f);
+            l2GridRect.anchorMin = new Vector2(0.11f, 0.10f);
+            l2GridRect.anchorMax = new Vector2(0.89f, 0.80f);
             l2GridRect.sizeDelta = Vector2.zero;
 
             GridLayoutGroup l2Grid = l2GridObj.AddComponent<GridLayoutGroup>();
-            l2Grid.cellSize = new Vector2(260f, 100f);
-            l2Grid.spacing = new Vector2(50f, 40f);
+            l2Grid.cellSize = new Vector2(280f, 200f);
+            l2Grid.spacing = new Vector2(60f, 48f);
             l2Grid.childAlignment = TextAnchor.MiddleCenter;
 
             for (int i = 0; i < 6; i++)
             {
                 Color bCol = (i % 2 == 0) ? borderNeonColor : neonMagentaColor;
-                GameObject lvlBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(l2GridObj.transform, new Vector2(260f, 100f), bCol, "", Color.clear);
+                GameObject lvlBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(l2GridObj.transform, new Vector2(280f, 200f), bCol, "", Color.clear);
                 lvlBtnObj.name = "LevelButton_" + i;
+
+                // Screenshot of the level's opening (LevelThumbnails), in a well across the top.
+                GameObject thumbObj = new GameObject("Thumb", typeof(RectTransform));
+                thumbObj.transform.SetParent(lvlBtnObj.transform, false);
+                RectTransform thumbRect = thumbObj.GetComponent<RectTransform>();
+                thumbRect.anchorMin = new Vector2(0f, 0.40f);
+                thumbRect.anchorMax = new Vector2(1f, 1f);
+                thumbRect.offsetMin = new Vector2(12f, 0f);
+                thumbRect.offsetMax = new Vector2(-12f, -12f);
+                thumbObj.AddComponent<RawImage>().raycastTarget = false;
 
                 // Level Number
                 GameObject numObj = new GameObject("LevelNumText");
                 numObj.transform.SetParent(lvlBtnObj.transform, false);
                 RectTransform numRect = numObj.AddComponent<RectTransform>();
-                numRect.anchorMin = new Vector2(0f, 0.40f);
-                numRect.anchorMax = new Vector2(1f, 0.95f);
+                numRect.anchorMin = new Vector2(0f, 0.19f);
+                numRect.anchorMax = new Vector2(1f, 0.39f);
                 numRect.sizeDelta = Vector2.zero;
 
-                TubityXLabel numText = TubityXUIFactory.AddLabel(numObj, "", 28.6f, textGoldColor, textGoldColor);
+                TubityXLabel numText = TubityXUIFactory.AddLabel(numObj, "", 18f, textGoldColor, textGoldColor);
 
                 // Subtitle
                 GameObject subObj = new GameObject("LevelSubText");
                 subObj.transform.SetParent(lvlBtnObj.transform, false);
                 RectTransform subRect = subObj.AddComponent<RectTransform>();
-                subRect.anchorMin = new Vector2(0f, 0.08f);
-                subRect.anchorMax = new Vector2(1f, 0.40f);
+                subRect.anchorMin = new Vector2(0f, 0.04f);
+                subRect.anchorMax = new Vector2(1f, 0.20f);
                 subRect.sizeDelta = Vector2.zero;
 
                 TubityXLabel subText = TubityXUIFactory.AddLabel(subObj, "", 10.9f, borderNeonColor, borderNeonColor);
@@ -829,8 +839,9 @@ namespace TubityWAI
                 GameObject lvlLockIconObj = new GameObject("LevelLockIcon", typeof(RectTransform));
                 lvlLockIconObj.transform.SetParent(lvlBtnObj.transform, false);
                 RectTransform lvlLockIconRect = lvlLockIconObj.GetComponent<RectTransform>();
-                lvlLockIconRect.anchorMin = new Vector2(0.5f, 0.5f);
-                lvlLockIconRect.anchorMax = new Vector2(0.5f, 0.5f);
+                // On the picture.
+                lvlLockIconRect.anchorMin = new Vector2(0.5f, 0.70f);
+                lvlLockIconRect.anchorMax = new Vector2(0.5f, 0.70f);
                 lvlLockIconRect.pivot = new Vector2(0.5f, 0.5f);
                 lvlLockIconRect.sizeDelta = new Vector2(46f, 46f);
 
@@ -927,7 +938,7 @@ namespace TubityWAI
             l3Rect.anchorMax = Vector2.one;
             l3Rect.sizeDelta = Vector2.zero;
 
-            GameObject l3Panel = GlassUIFactory.CreateGlassmorphicPanel(layer3Obj.transform, new Vector2(1240f, 640f), borderNeonColor, new Vector2(0f, 40f));
+            GameObject l3Panel = GlassUIFactory.CreateGlassmorphicPanel(layer3Obj.transform, new Vector2(1340f, 720f), borderNeonColor, new Vector2(0f, 30f));
             l3Panel.name = "L3_Panel";
 
             // Indicator
@@ -944,13 +955,13 @@ namespace TubityWAI
             GameObject l3GridObj = new GameObject("L3_Grid");
             l3GridObj.transform.SetParent(l3Panel.transform, false);
             RectTransform l3GridRect = l3GridObj.AddComponent<RectTransform>();
-            l3GridRect.anchorMin = new Vector2(0.08f, 0.22f);
-            l3GridRect.anchorMax = new Vector2(0.92f, 0.83f);
+            l3GridRect.anchorMin = new Vector2(0.10f, 0.22f);
+            l3GridRect.anchorMax = new Vector2(0.90f, 0.80f);
             l3GridRect.sizeDelta = Vector2.zero;
 
             GridLayoutGroup l3Grid = l3GridObj.AddComponent<GridLayoutGroup>();
             l3Grid.cellSize = new Vector2(230f, 88f);
-            l3Grid.spacing = new Vector2(30f, 22f);
+            l3Grid.spacing = new Vector2(40f, 30f);
             l3Grid.childAlignment = TextAnchor.MiddleCenter;
             l3Grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
             l3Grid.constraintCount = 4;
@@ -1295,6 +1306,18 @@ namespace TubityWAI
                     btn.onClick.AddListener(() => { PlayMenuForward(); LaunchGame(config); });
 
                     if (i < levelLockIcons.Count) levelLockIcons[i].SetActive(!unlocked);
+
+                    // The level's opening, dimmed while locked; a dark frame until captured.
+                    Transform thumbT = btnObj.transform.Find("Thumb");
+                    RawImage thumb = thumbT != null ? thumbT.GetComponent<RawImage>() : null;
+                    if (thumb != null)
+                    {
+                        Texture2D shot = TubityWAI.Progression.LevelThumbnails.GetCampaign(config.levelNumber);
+                        thumb.texture = shot;
+                        thumb.color = shot == null ? new Color(0.05f, 0.06f, 0.11f, 0.9f)
+                                    : unlocked ? Color.white
+                                    : new Color(0.30f, 0.30f, 0.36f, 1f);
+                    }
                 }
                 else
                 {
@@ -1470,7 +1493,7 @@ namespace TubityWAI
 
         private void CreateSettingsPopup()
         {
-            settingsPopupObj = GlassUIFactory.CreateGlassmorphicPanel(canvasObj.transform, new Vector2(620f, 700f), borderNeonColor, Vector2.zero);
+            settingsPopupObj = GlassUIFactory.CreateGlassmorphicPanel(canvasObj.transform, new Vector2(680f, 780f), borderNeonColor, Vector2.zero);
             settingsPopupObj.name = "SettingsPopup";
 
             // Title
@@ -1723,7 +1746,7 @@ namespace TubityWAI
             l4Rect.anchorMax = Vector2.one;
             l4Rect.sizeDelta = Vector2.zero;
 
-            GameObject l4Panel = GlassUIFactory.CreateGlassmorphicPanel(layer4Obj.transform, new Vector2(1240f, 680f), textGoldColor, new Vector2(0f, 20f));
+            GameObject l4Panel = GlassUIFactory.CreateGlassmorphicPanel(layer4Obj.transform, new Vector2(1340f, 760f), textGoldColor, new Vector2(0f, 20f));
             l4Panel.name = "L4_Panel";
 
             // Title indicator text
@@ -1740,13 +1763,13 @@ namespace TubityWAI
             GameObject l4GridObj = new GameObject("L4_Grid");
             l4GridObj.transform.SetParent(l4Panel.transform, false);
             RectTransform l4GridRect = l4GridObj.AddComponent<RectTransform>();
-            l4GridRect.anchorMin = new Vector2(0.08f, 0.22f);
-            l4GridRect.anchorMax = new Vector2(0.92f, 0.83f);
+            l4GridRect.anchorMin = new Vector2(0.10f, 0.20f);
+            l4GridRect.anchorMax = new Vector2(0.90f, 0.82f);
             l4GridRect.sizeDelta = Vector2.zero;
 
             GridLayoutGroup l4Grid = l4GridObj.AddComponent<GridLayoutGroup>();
             l4Grid.cellSize = new Vector2(290f, 160f);
-            l4Grid.spacing = new Vector2(40f, 24f);
+            l4Grid.spacing = new Vector2(48f, 32f);
             l4Grid.childAlignment = TextAnchor.MiddleCenter;
 
             for (int i = 0; i < ShopCardsPerPage; i++)

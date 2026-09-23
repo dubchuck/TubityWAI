@@ -235,7 +235,7 @@ namespace TubityWAI
             lcOverlayGroup = levelCompletePanel.AddComponent<CanvasGroup>();
 
             GameObject card = TubityXUIFactory.CreatePanel(
-                safe, new Vector2(560f, 500f), TubityXUIFactory.Gold,
+                safe, new Vector2(620f, 570f), TubityXUIFactory.Gold,
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, 26f);
             card.name = "LevelCompleteCard";
             lcCardRect = card.GetComponent<RectTransform>();
@@ -250,7 +250,7 @@ namespace TubityWAI
                 sr.anchorMin = new Vector2(0.5f, 0.71f);
                 sr.anchorMax = new Vector2(0.5f, 0.71f);
                 sr.pivot = new Vector2(0.5f, 0.5f);
-                sr.anchoredPosition = new Vector2((i - 1) * 92f, 0f);
+                sr.anchoredPosition = new Vector2((i - 1) * 100f, 0f);
                 sr.sizeDelta = new Vector2(76f, 76f);
                 Image img = starObj.AddComponent<Image>();
                 img.sprite = StarSprite();
@@ -274,12 +274,12 @@ namespace TubityWAI
 
             Vector2 btnSize = new Vector2(220f, 52f);
             lcReplayButton = AddCardButton(card, "ReplayButton", "REPLAY", btnSize,
-                                           TubityXUIFactory.Cyan, 0.07f, -118f, false, () =>
+                                           TubityXUIFactory.Cyan, 0.08f, -132f, false, () =>
             {
                 if (GameManager.Instance != null) GameManager.Instance.TriggerReplay();
             });
             GameObject lcMenuButton = AddCardButton(card, "MenuButton", "MAIN MENU", btnSize,
-                          TubityXUIFactory.Purple, 0.07f, 118f, false, () =>
+                          TubityXUIFactory.Purple, 0.08f, 132f, false, () =>
             {
                 LeaveReview(AnimateLevelCompleteOut(), () =>
                 {
@@ -440,7 +440,7 @@ namespace TubityWAI
             suOverlayGroup = sphereUnlockPanel.AddComponent<CanvasGroup>();
 
             GameObject card = TubityXUIFactory.CreatePanel(
-                safe, new Vector2(480f, 380f), TubityXUIFactory.Cyan,
+                safe, new Vector2(540f, 430f), TubityXUIFactory.Cyan,
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, 26f);
             card.name = "SphereUnlockCard";
             suCardRect = card.GetComponent<RectTransform>();
@@ -828,8 +828,9 @@ namespace TubityWAI
             GameObject host = new GameObject(name, typeof(RectTransform));
             host.transform.SetParent(card.transform, false);
             RectTransform r = host.GetComponent<RectTransform>();
-            r.anchorMin = new Vector2(0.05f, yMin);
-            r.anchorMax = new Vector2(0.95f, yMax);
+            // Generous side margins: card text never runs close to the rim.
+            r.anchorMin = new Vector2(0.08f, yMin);
+            r.anchorMax = new Vector2(0.92f, yMax);
             r.sizeDelta = Vector2.zero;
             return TubityXUIFactory.AddLabel(host, text, cap, face, accent, cap * 0.16f);
         }
@@ -858,7 +859,7 @@ namespace TubityWAI
             goOverlayGroup = gameOverPanel.AddComponent<CanvasGroup>();
 
             GameObject card = TubityXUIFactory.CreatePanel(
-                safe, new Vector2(520f, 360f), DangerRed,
+                safe, new Vector2(580f, 420f), DangerRed,
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, 26f);
             card.name = "CardPanel";
             goCardRect = card.GetComponent<RectTransform>();
@@ -871,7 +872,7 @@ namespace TubityWAI
 
             Vector2 btnSize = new Vector2(220f, 58f);
             replayButton = AddCardButton(card, "ReplayButton", "REPLAY", btnSize,
-                                         TubityXUIFactory.Blue, 0.18f, -118f, true, () =>
+                                         TubityXUIFactory.Blue, 0.18f, -132f, true, () =>
             {
                 LeaveReview(SlamCardOut(goOverlayGroup, goCardRect, gameOverPanel), () =>
                 {
@@ -880,7 +881,7 @@ namespace TubityWAI
             });
 
             GameObject goMenuButton = AddCardButton(card, "MenuButton", "MAIN MENU", btnSize,
-                          TubityXUIFactory.Purple, 0.18f, 118f, false, () =>
+                          TubityXUIFactory.Purple, 0.18f, 132f, false, () =>
             {
                 LeaveReview(SlamCardOut(goOverlayGroup, goCardRect, gameOverPanel), () =>
                 {
@@ -900,7 +901,7 @@ namespace TubityWAI
             pauseGroup = pausePanel.AddComponent<CanvasGroup>();
 
             GameObject card = TubityXUIFactory.CreatePanel(
-                safe, new Vector2(460f, 400f), TubityXUIFactory.Cyan,
+                safe, new Vector2(520f, 470f), TubityXUIFactory.Cyan,
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, 26f);
             card.name = "PauseCardPanel";
             pauseCardRect = card.GetComponent<RectTransform>();
@@ -954,7 +955,7 @@ namespace TubityWAI
             exitTutorialPanel = CreateOverlay(canvas, "ExitTutorialPanel", out safe);
 
             GameObject card = TubityXUIFactory.CreatePanel(
-                safe, new Vector2(560f, 340f), TubityXUIFactory.Gold,
+                safe, new Vector2(620f, 400f), TubityXUIFactory.Gold,
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, 26f);
             card.name = "ExitTutorialCardPanel";
 
