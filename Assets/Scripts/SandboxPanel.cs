@@ -263,6 +263,16 @@ namespace TubityWAI
                 case EnvironmentTheme.Underwater: return "WATER";
                 case EnvironmentTheme.SolarSystem: return "SOLAR";
                 case EnvironmentTheme.AsteroidBelt: return "BELT";
+                case EnvironmentTheme.PrismHall: return "MIRRORS";
+                case EnvironmentTheme.Cavern: return "CAVE";
+                case EnvironmentTheme.LavaTube: return "LAVA TUBE";
+                case EnvironmentTheme.SolarFlare: return "CORONA";
+                case EnvironmentTheme.BlackHole: return "BLACK HOLE";
+                case EnvironmentTheme.Thunderstorm: return "STORM";
+                case EnvironmentTheme.SunsetCanyon: return "CANYON";
+                case EnvironmentTheme.Clockwork: return "CLOCKWORK";
+                case EnvironmentTheme.SakuraGates: return "SAKURA";
+                case EnvironmentTheme.CandyClouds: return "CANDY";
                 default: return theme.ToString().ToUpperInvariant();
             }
         }

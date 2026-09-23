@@ -15,13 +15,18 @@ namespace TubityWAI
     /// and shared, and colliders are never added. Every prop receives the main
     /// light's shadow; only the big grounded silhouettes cast one (see CastShadows).
     /// </summary>
-    public static class EnvironmentScenery
+    public static partial class EnvironmentScenery
     {
         private const string ContainerName = "EnvironmentScenery";
         private const float TubeGap = 2.5f;        // clearance between tube wall and the nearest prop
         private const float MaxOrbitSpeed = 5f;    // world units/sec a prop may travel along its orbit
 
-        public enum Placement { Grounded, Floating }
+        /// <summary>
+        /// Grounded props stand on the ground outside the tube, Floating ones hang in the space
+        /// around it. Encircle props are centred on the tube's own axis and wrap all the way round
+        /// it - cave walls, gates, ring gears - one per segment, lined up with the curve.
+        /// </summary>
+        public enum Placement { Grounded, Floating, Encircle }
 
         public class Prop
         {
@@ -38,6 +43,17 @@ namespace TubityWAI
             public bool upright = false;       // floating prop keeps its local up (jellyfish)
             public float orbitSpeed = 0f;      // degrees/sec around the tube axis, before the distance clamp
             public SceneryDrift drift;
+
+            // --- Encircle props ---
+            /// <summary>Stretch along the tube so a shape this long exactly spans one segment
+            /// (walls that must tile); 0 keeps the prop's own proportions (gates, gears).</summary>
+            public float encircleLength = 0f;
+            /// <summary>Keep this roll instead of a random one (gates stay upright).</summary>
+            public bool fixedRoll = false;
+            public float roll = 0f;
+
+            /// <summary>Fraction of segments that show this prop at all - for rare set pieces.</summary>
+            public float chance = 1f;
         }
 
         private static readonly Dictionary<string, Material> materialCache = new Dictionary<string, Material>();
@@ -109,6 +125,9 @@ namespace TubityWAI
                 // Dissolve rather than swap: each prop has its own threshold, so the old theme's props
                 // thin out while the new theme's fill in instead of a whole segment changing at once.
                 bool visible = weight >= 1f || prop.dissolveKey < weight;
+                // A rare set piece only turns up in some segments, decided by the segment's own
+                // position so the same stretch of tube always gets the same answer.
+                if (visible && prop.chance < 1f) visible = SegmentHash(segmentZ, i) < prop.chance;
                 if (prop.root.activeSelf != visible) prop.root.SetActive(visible);
                 if (!visible) continue;
 
@@ -118,8 +137,51 @@ namespace TubityWAI
             Random.state = prevState;
         }
 
+        private static float SegmentHash(float segmentZ, int index)
+        {
+            float h = Mathf.Sin(segmentZ * 12.9898f + index * 78.233f) * 43758.5453f;
+            return h - Mathf.Floor(h);
+        }
+
+        /// <summary>
+        /// An Encircle prop spans its segment on the tube's axis. It is aimed along the chord of the
+        /// curve from one end of the segment to the other, so a chain of wall shells meets the tube's
+        /// own bends instead of stepping sideways at every joint.
+        /// </summary>
+        private static void PlaceEncircle(Prop prop, float segmentLength, LevelConfig config, float segmentZ)
+        {
+            Vector3 c0 = config.GetCurveOffset(segmentZ);
+            Vector3 c1 = config.GetCurveOffset(segmentZ + segmentLength);
+            Vector3 cm = config.GetCurveOffset(segmentZ + segmentLength * 0.5f);
+            Vector3 along = new Vector3(c1.x - c0.x, c1.y - c0.y, segmentLength);
+            Quaternion follow = Quaternion.LookRotation(along.normalized, Vector3.up);
+
+            float roll = prop.fixedRoll ? prop.roll : Random.Range(0f, 360f);
+            float scale = Random.Range(prop.minScale, prop.maxScale);
+            float zScale = prop.encircleLength > 0f ? segmentLength / prop.encircleLength : scale;
+
+            Quaternion local = Quaternion.Euler(0f, 0f, roll);
+            Transform t = prop.root.transform;
+            t.localPosition = new Vector3(cm.x, cm.y, segmentLength * 0.5f);
+            t.localRotation = follow * local;
+            t.localScale = new Vector3(scale, scale, zScale);
+
+            if (prop.drift != null)
+            {
+                // No orbit and no wander: the drift only spins it in place (ring gears).
+                prop.drift.orbitSpeed = 0f;
+                prop.drift.Configure(new Vector2(cm.x, cm.y), 0f, 0f, segmentLength * 0.5f, 0f, follow * local);
+            }
+        }
+
         private static void Place(Prop prop, float segmentLength, float tubeRadius, LevelConfig config, float segmentZ)
         {
+            if (prop.placement == Placement.Encircle)
+            {
+                PlaceEncircle(prop, segmentLength, config, segmentZ);
+                return;
+            }
+
             float localZ = Random.Range(2f, segmentLength - 2f);
             Vector3 curve = config.GetCurveOffset(segmentZ + localZ);
 
@@ -178,6 +240,7 @@ namespace TubityWAI
                 case EnvironmentTheme.Crystal:    BuildCrystal(parent, props); break;
                 case EnvironmentTheme.SolarSystem:  BuildSolarSystem(parent, props); break;
                 case EnvironmentTheme.AsteroidBelt: BuildAsteroidBelt(parent, props); break;
+                default: BuildWorld(theme, parent, props); break;   // the second set (EnvironmentScenery.Worlds.cs)
             }
         }
 
@@ -731,7 +794,12 @@ namespace TubityWAI
 
             SceneryDrift d = root.AddComponent<SceneryDrift>();
             float dir = Random.value < 0.5f ? -1f : 1f;
-            if (placement == Placement.Grounded)
+            if (placement == Placement.Encircle)
+            {
+                // Wraps the tube: never orbits or wanders; a builder may give it a spin.
+                prop.orbitSpeed = 0f;
+            }
+            else if (placement == Placement.Grounded)
             {
                 // Anchored to the tube wall: it creeps around the tube and leans,
                 // but never slides off its footing.

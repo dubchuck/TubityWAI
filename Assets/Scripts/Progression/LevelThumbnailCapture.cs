@@ -2,6 +2,7 @@
 using System.Collections;
 using System.IO;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace TubityWAI.Progression
 {
@@ -14,8 +15,11 @@ namespace TubityWAI.Progression
     /// Each level is built the normal way (GameSetup.StartGame) but begun just short of its
     /// first ring (a composed level) or the end of its clear run-in (a campaign level), so the
     /// picture shows the tube, the environment and the first arcs rather than empty tube. The
-    /// countdown holds the sphere still while the camera renders straight into a texture, which
-    /// leaves out every HUD and menu overlay.
+    /// countdown holds the sphere still while the camera renders straight into a texture through
+    /// a render request, which leaves out every HUD and menu overlay. Should that come back black
+    /// (it can, depending on the pipeline's setup), the frame is grabbed from the Game view with
+    /// the overlays hidden instead - so keep the Game view visible while it runs. A frame that is
+    /// still black is skipped rather than saved.
     /// </summary>
     public class LevelThumbnailCapture : MonoBehaviour
     {
@@ -50,9 +54,11 @@ namespace TubityWAI.Progression
             string dir = Path.Combine(Application.dataPath, "Resources", LevelThumbnails.ResourceFolder);
             Directory.CreateDirectory(dir);
 
+            // No MSAA: a multisampled target can read back as black.
             RenderTexture rt = new RenderTexture(LevelThumbnails.Width, LevelThumbnails.Height, 24,
                                                  RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
-            rt.antiAliasing = 8;
+            rt.antiAliasing = 1;
+            rt.Create();
             Texture2D readback = new Texture2D(LevelThumbnails.Width, LevelThumbnails.Height, TextureFormat.RGB24, false);
 
             System.Collections.Generic.List<Shot> shots = new System.Collections.Generic.List<Shot>();
@@ -69,7 +75,7 @@ namespace TubityWAI.Progression
                                      build = () => LevelProgression.CreateCampaignLevel(level) });
             }
 
-            int written = 0;
+            int written = 0, skipped = 0;
             for (int i = 0; i < shots.Count; i++)
             {
                 Shot shot = shots[i];
@@ -101,15 +107,25 @@ namespace TubityWAI.Progression
                 cam = Camera.main;
                 if (cam == null) continue;
 
-                RenderTexture previous = cam.targetTexture;
-                cam.targetTexture = rt;
-                cam.Render();
-                cam.targetTexture = previous;
+                RenderThroughPipeline(cam, rt);
+                ReadBack(rt, readback);
 
-                RenderTexture.active = rt;
-                readback.ReadPixels(new Rect(0, 0, rt.width, rt.height), 0, 0);
-                readback.Apply();
-                RenderTexture.active = null;
+                if (IsBlack(readback))
+                {
+                    yield return new WaitForEndOfFrame();
+                    GrabGameView(rt);
+                    ReadBack(rt, readback);
+                }
+
+                if (IsBlack(readback))
+                {
+                    Debug.LogWarning($"[LevelThumbnails] {shot.label} rendered black; skipped. Is the Game view visible?");
+                    // Don't leave an older, possibly just as black, picture standing in for it.
+                    string stale = Path.Combine(dir, shot.fileName + ".jpg");
+                    if (File.Exists(stale)) File.Delete(stale);
+                    skipped++;
+                    continue;
+                }
 
                 File.WriteAllBytes(Path.Combine(dir, shot.fileName + ".jpg"), readback.EncodeToJPG(88));
                 written++;
@@ -124,9 +140,80 @@ namespace TubityWAI.Progression
             Destroy(readback);
             AudioListener.volume = volume;
 
-            Debug.Log($"[LevelThumbnails] Wrote {written} thumbnails to Assets/Resources/{LevelThumbnails.ResourceFolder}.");
+            Debug.Log($"[LevelThumbnails] Wrote {written} thumbnails to Assets/Resources/{LevelThumbnails.ResourceFolder}" +
+                      (skipped > 0 ? $"; {skipped} came out black and were skipped." : "."));
             UnityEditor.SessionState.SetBool(WrittenKey, written > 0);
             Stop();
+        }
+
+        /// <summary>
+        /// Renders the camera into `target` the way the render pipeline supports: a standard render
+        /// request (URP renders its own post-processing into it). Falls back to Camera.Render on a
+        /// pipeline that doesn't take requests.
+        /// </summary>
+        private static void RenderThroughPipeline(Camera cam, RenderTexture target)
+        {
+            RenderPipeline.StandardRequest request = new RenderPipeline.StandardRequest();
+            if (RenderPipeline.SupportsRenderRequest(cam, request))
+            {
+                request.destination = target;
+                RenderPipeline.SubmitRenderRequest(cam, request);
+                return;
+            }
+
+            RenderTexture previous = cam.targetTexture;
+            cam.targetTexture = target;
+            cam.Render();
+            cam.targetTexture = previous;
+        }
+
+        /// <summary>
+        /// The fallback: this frame as the Game view shows it, with every screen-space overlay
+        /// (HUD, menus, countdown) switched off for it, cropped to 2:1 from the centre and scaled
+        /// into `target`. Must run after WaitForEndOfFrame.
+        /// </summary>
+        private static void GrabGameView(RenderTexture target)
+        {
+            System.Collections.Generic.List<Canvas> hidden = new System.Collections.Generic.List<Canvas>();
+            foreach (Canvas c in FindObjectsByType<Canvas>(FindObjectsSortMode.None))
+            {
+                if (c.enabled && c.isRootCanvas && c.renderMode == RenderMode.ScreenSpaceOverlay)
+                {
+                    c.enabled = false;
+                    hidden.Add(c);
+                }
+            }
+
+            Texture2D screen = ScreenCapture.CaptureScreenshotAsTexture();
+            foreach (Canvas c in hidden) c.enabled = true;
+            if (screen == null) return;
+
+            float aspect = LevelThumbnails.Width / (float)LevelThumbnails.Height;
+            float w = screen.width, h = screen.height;
+            Vector2 scale = w / h > aspect ? new Vector2(h * aspect / w, 1f) : new Vector2(1f, w / aspect / h);
+            Vector2 offset = new Vector2((1f - scale.x) * 0.5f, (1f - scale.y) * 0.5f);
+            Graphics.Blit(screen, target, scale, offset);
+            Destroy(screen);
+        }
+
+        private static void ReadBack(RenderTexture source, Texture2D into)
+        {
+            RenderTexture previous = RenderTexture.active;
+            RenderTexture.active = source;
+            into.ReadPixels(new Rect(0, 0, source.width, source.height), 0, 0);
+            into.Apply();
+            RenderTexture.active = previous;
+        }
+
+        /// <summary>Nothing brighter than near-black anywhere: the render didn't land.</summary>
+        private static bool IsBlack(Texture2D tex)
+        {
+            Color32[] px = tex.GetPixels32();
+            for (int i = 0; i < px.Length; i += 7)
+            {
+                if (px[i].r > 12 || px[i].g > 12 || px[i].b > 12) return false;
+            }
+            return true;
         }
 
         /// <summary>Where the level's first arcs are: a composed level's first ring, or the end of

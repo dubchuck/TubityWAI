@@ -59,6 +59,16 @@ namespace TubityWAI
         private readonly List<ParticleLayer> particleLayers = new List<ParticleLayer>();
         private readonly List<EnvironmentTheme> themeScratch = new List<EnvironmentTheme>();
 
+        // Set pieces: a theme's backdrop (the star, the black hole) and its storm, one each per
+        // theme the level visits, faded with that theme's weight.
+        private readonly List<BackdropInstance> backdrops = new List<BackdropInstance>();
+        private readonly List<EnvironmentStorm> storms = new List<EnvironmentStorm>();
+
+        // Lightning briefly lifts the sky and fog toward this colour (see FlashSky).
+        private static readonly Color FlashTint = new Color(0.75f, 0.82f, 1f);
+        private float skyFlash;
+        private float skyFlashApplied;
+
         // Set while the blend is parked on a single stop, so ApplyBlend can bail out early.
         private bool settled;
         private int settledStop = -1;
@@ -129,6 +139,78 @@ namespace TubityWAI
             }
 
             PlayParticleLayers();
+
+            if (blend != null)
+            {
+                blend.AllThemes(themeScratch);
+                List<EnvironmentTheme> all = new List<EnvironmentTheme>(themeScratch);
+                for (int i = 0; i < all.Count; i++) AddSetPieces(all[i], cam);
+            }
+            else
+            {
+                AddSetPieces(palette.theme, cam);
+            }
+        }
+
+        /// <summary>
+        /// A theme's backdrop and storm, built the first time the level needs that theme (at start,
+        /// or when the sandbox appends it mid-run).
+        /// </summary>
+        private void AddSetPieces(EnvironmentTheme theme, Camera cam)
+        {
+            EnvironmentPalette source = EnvironmentPalettes.Get(theme);
+            if (source == null) return;
+
+            if (source.backdrop != EnvironmentBackdrop.None && backdrops.Find(b => b.theme == theme) == null)
+            {
+                BackdropInstance b = EnvironmentBackdrops.Build(source, transform);
+                if (b != null)
+                {
+                    backdrops.Add(b);
+                    b.SetWeight(ThemeWeight(theme));
+                    // The backdrop hangs well past the tunnel; make sure the camera still draws it.
+                    Camera c = cam != null ? cam : Camera.main;
+                    if (c != null) c.farClipPlane = Mathf.Max(c.farClipPlane, EnvironmentBackdrops.Distance + 400f);
+                }
+            }
+
+            if (source.lightning > 0f && storms.Find(s => s.theme == theme) == null)
+            {
+                EnvironmentStorm storm = gameObject.AddComponent<EnvironmentStorm>();
+                storm.manager = this;
+                storm.theme = theme;
+                storm.strikesPerSecond = source.lightning;
+                storms.Add(storm);
+            }
+        }
+
+        /// <summary>How much of the scene belongs to a theme right now: its blend weight at the
+        /// player, or 1 for a level's only theme.</summary>
+        public float ThemeWeight(EnvironmentTheme theme)
+        {
+            if (blend != null) return blend.Weight(theme, CurrentDistance());
+            return theme == palette.theme ? 1f : 0f;
+        }
+
+        /// <summary>Lightning: lifts the sky and fog toward a cold white by `amount` (0 = normal).
+        /// Applied in LateUpdate, after any blend has written the palette.</summary>
+        public void FlashSky(float amount)
+        {
+            skyFlash = Mathf.Clamp01(amount);
+        }
+
+        private void ApplySkyFlash()
+        {
+            if (Mathf.Abs(skyFlash - skyFlashApplied) < 0.002f) return;
+            skyFlashApplied = skyFlash;
+
+            if (skyMaterial != null)
+            {
+                skyMaterial.SetColor("_HorizonColor", palette.skyHorizon + FlashTint * skyFlash * 0.8f);
+                skyMaterial.SetColor("_TopColor", palette.skyTop + FlashTint * skyFlash * 0.45f);
+                skyMaterial.SetColor("_DetailColor", palette.detailColor + FlashTint * skyFlash * 0.6f);
+            }
+            RenderSettings.fogColor = palette.fogColor + FlashTint * skyFlash * 0.45f;
         }
 
         /// <summary>
@@ -307,6 +389,8 @@ namespace TubityWAI
                 // findable here - and adopting it would hand the shadow pass to a light with no
                 // shadows and leave the real sun as a stray additional light.
                 if (l.gameObject.name == RimLightName) continue;
+                // Nor a storm's lightning flash, for the same reason.
+                if (l.gameObject.name == EnvironmentStorm.FlashLightName) continue;
                 sun = l;
                 break;
             }
@@ -520,6 +604,55 @@ namespace TubityWAI
                     size.size = new ParticleSystem.MinMaxCurve(1f, Blink(2, 0.45f));
                     break;
 
+                // Slanting rain, fast enough to streak (see the stretched renderer below).
+                case AmbientParticleStyle.Rain:
+                    main.startLifetime = new ParticleSystem.MinMaxCurve(1.2f, 1.8f);
+                    main.startSpeed = 0f;
+                    vel.enabled = true;
+                    vel.space = ParticleSystemSimulationSpace.World;
+                    vel.x = Ranged(-3f, -1.5f);
+                    vel.y = Ranged(-24f, -17f);
+                    vel.z = Ranged(-5f, -2.5f);
+                    break;
+
+                // Petals: a slow, wide, tumbling fall.
+                case AmbientParticleStyle.Petals:
+                    main.startLifetime = new ParticleSystem.MinMaxCurve(7f, 11f);
+                    main.startSpeed = 0f;
+                    vel.enabled = true;
+                    vel.space = ParticleSystemSimulationSpace.World;
+                    vel.x = Wobbling(1.1f);
+                    vel.y = Ranged(-1.3f, -0.6f);
+                    vel.z = Ranged(-0.8f, 0.4f);
+                    var tumble = ps.rotationOverLifetime;
+                    tumble.enabled = true;
+                    tumble.z = new ParticleSystem.MinMaxCurve(-2.5f, 2.5f);
+                    break;
+
+                // Plasma or infalling gas rushing back past the camera.
+                case AmbientParticleStyle.Streaks:
+                    main.startLifetime = new ParticleSystem.MinMaxCurve(1.5f, 2.5f);
+                    main.startSpeed = 0f;
+                    vel.enabled = true;
+                    vel.space = ParticleSystemSimulationSpace.World;
+                    vel.x = Wobbling(1.2f);
+                    vel.y = Ranged(-0.8f, 0.8f);
+                    vel.z = Ranged(-34f, -20f);
+                    break;
+
+                // Hot flecks spat off machinery: a quick drop, burning out as they go.
+                case AmbientParticleStyle.Sparks:
+                    main.startLifetime = new ParticleSystem.MinMaxCurve(0.8f, 1.6f);
+                    main.startSpeed = 0f;
+                    vel.enabled = true;
+                    vel.space = ParticleSystemSimulationSpace.World;
+                    vel.x = Wobbling(1.6f);
+                    vel.y = Ranged(-7f, -2.5f);
+                    vel.z = Ranged(-1f, 1f);
+                    size.enabled = true;
+                    size.size = new ParticleSystem.MinMaxCurve(1f, AnimationCurve.Linear(0f, 1f, 1f, 0.1f));
+                    break;
+
                 // Heavier than snow and swaying wider, to sit under the ember layer.
                 case AmbientParticleStyle.Ash:
                     main.startLifetime = new ParticleSystem.MinMaxCurve(5f, 8f);
@@ -536,6 +669,14 @@ namespace TubityWAI
 
             ParticleSystemRenderer renderer = psObj.GetComponent<ParticleSystemRenderer>();
             renderer.renderMode = ParticleSystemRenderMode.Billboard;
+            if (style == AmbientParticleStyle.Rain || style == AmbientParticleStyle.Streaks || style == AmbientParticleStyle.Sparks)
+            {
+                // Fast things read as streaks, not dots.
+                renderer.renderMode = ParticleSystemRenderMode.Stretch;
+                renderer.velocityScale = style == AmbientParticleStyle.Sparks ? 0.05f : 0.04f;
+                renderer.lengthScale = 1f;
+                renderer.cameraVelocityScale = 0f;
+            }
             renderer.shadowCastingMode = ShadowCastingMode.Off;
             renderer.receiveShadows = false;
             renderer.sharedMaterial = CreateParticleMaterial();
@@ -716,6 +857,7 @@ namespace TubityWAI
             {
                 int first = particleLayers.Count;
                 BuildParticleFields(EnvironmentPalettes.GetOrClassic(theme), theme);
+                AddSetPieces(theme, null);
                 // Prewarm fills the field at full rate on Play, so weight the new layers to nothing
                 // first and let ApplyBlend fade them in as the theme gains weight.
                 for (int i = first; i < particleLayers.Count; i++)
@@ -739,6 +881,9 @@ namespace TubityWAI
             if (cameraTransform == null && Camera.main != null) cameraTransform = Camera.main.transform;
 
             if (blend != null) ApplyBlend(CurrentDistance());
+
+            for (int i = 0; i < backdrops.Count; i++) backdrops[i].SetWeight(ThemeWeight(backdrops[i].theme));
+            ApplySkyFlash();
 
             if (cameraTransform == null) return;
 

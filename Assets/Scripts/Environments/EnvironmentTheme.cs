@@ -18,7 +18,26 @@ namespace TubityWAI
         Grid,
         // Appended, never reordered: LevelConfig serialises the theme as an int.
         SolarSystem,
-        AsteroidBelt
+        AsteroidBelt,
+        // The second set (EnvironmentThemes.Worlds.cs / EnvironmentScenery.Worlds.cs).
+        PrismHall,      // falling through a hall of mirrors
+        Cavern,         // a lantern-lit mine cave
+        LavaTube,       // inside a basalt lava tube, a molten river below
+        SolarFlare,     // skimming a star's corona
+        BlackHole,      // a lensed accretion disc filling the sky
+        Thunderstorm,   // inside a storm cell, lightning all round
+        SunsetCanyon,   // a desert canyon at golden hour
+        Clockwork,      // the works of a giant clock
+        SakuraGates,    // a tunnel of torii gates under cherry blossom
+        CandyClouds     // a pastel sky of sweets
+    }
+
+    /// <summary>A huge far-off object a theme hangs in its sky (see EnvironmentBackdrops).</summary>
+    public enum EnvironmentBackdrop
+    {
+        None,
+        Sun,        // a boiling star with a streaming corona and flare loops on its limb
+        BlackHole   // a shadow ringed by its lensed, flowing accretion disc
     }
 
     /// <summary>How the ambient particle field behaves for a theme.</summary>
@@ -31,7 +50,12 @@ namespace TubityWAI
         Embers,     // rise fast, flicker out
         Snow,       // drift down slowly
         Motes,      // near-still neon dust, drifting toward the camera
-        Ash         // heavy flecks falling with a sideways sway
+        Ash,        // heavy flecks falling with a sideways sway
+        // Appended with the second set of worlds.
+        Rain,       // fast slanting streaks
+        Petals,     // slow tumbling fall
+        Streaks,    // bright plasma rushing past the camera
+        Sparks      // short-lived hot flecks falling off machinery
     }
 
     /// <summary>
@@ -110,6 +134,12 @@ namespace TubityWAI
         public Color particleColorB = Color.white;
         public float particleRateB = 8f;
         public Vector2 particleSizeB = new Vector2(0.1f, 0.3f);
+
+        // --- Set pieces (discrete, read per theme rather than blended) ---
+        /// <summary>A far-off object hung in the sky along sunDirection.</summary>
+        public EnvironmentBackdrop backdrop = EnvironmentBackdrop.None;
+        /// <summary>Lightning strikes per second at full weight; 0 for none.</summary>
+        public float lightning = 0f;
 
         public EnvironmentPalette Clone()
         {
@@ -191,7 +221,7 @@ namespace TubityWAI
         }
     }
 
-    public static class EnvironmentPalettes
+    public static partial class EnvironmentPalettes
     {
         /// <summary>
         /// Where the sun sits for the solar-system themes: ahead of the player, up and to the left.
@@ -227,7 +257,7 @@ namespace TubityWAI
                 case EnvironmentTheme.Grid:       return grid       ?? (grid       = BuildGrid());
                 case EnvironmentTheme.SolarSystem:  return solarSystem  ?? (solarSystem  = BuildSolarSystem());
                 case EnvironmentTheme.AsteroidBelt: return asteroidBelt ?? (asteroidBelt = BuildAsteroidBelt());
-                default: return null;
+                default: return GetWorld(theme);   // the second set; null for None
             }
         }
 
