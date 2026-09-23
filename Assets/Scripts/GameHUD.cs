@@ -28,20 +28,39 @@ namespace TubityWAI
         private TubityXLabel scoreText;
         private TubityXLabel coinText;
         private TubityXLabel timeText;
+        private GameObject statsPanelObj;
+
+        [Tooltip("The top-right score / coins / time pills. The tutorial hides them so only its own copy is on screen.")]
+        public bool showStatsPanel = true;
+
+        // Top-right column: one framed pill per stat, then one per active powerup, stacked with
+        // a gap between each. A layout group does the stacking, so a powerup that switches on
+        // or off simply takes or gives back its slot beneath the stats.
+        private const float PillWidth = 156f;
+        private const float PillHeight = 52f;
+        private const float PillGap = 10f;
+        private const float PillIcon = 30f;
+        private RectTransform hudColumn;
 
         // Wraps the stats panel, powerup dial and pause button so they can fade/shrink
         // away together the instant the level ends, instead of just popping off with the pause.
         private CanvasGroup gameplayHudGroup;
 
-        // Powerup UI
-        private GameObject powerupPanel;
-        private TubityXPanel powerupChrome;
-        private Image powerupArc;
-        private TubityXLabel powerupText;
+        // Powerup pills: an icon and a bar that drains as the effect runs out.
+        private GameObject invinciblePill;
+        private RectTransform invincibleFill;
+        private GameObject magnetPill;
+        private RectTransform magnetFill;
 
         // Game Over & Pause Screen Elements
         private GameObject gameOverPanel;
         private GameObject pausePanel;
+        private CanvasGroup pauseGroup;
+        private RectTransform pauseCardRect;
+        private Coroutine pausePop;
+        private bool pauseClosing;      // the card is slamming out; time restarts once it's gone
+        private GameObject exitTutorialPanel;   // "leave the tutorial?" confirm, tutorial runs only
+        private GameObject keepGoingButton;
         private GameObject pauseButton;
         private GameObject replayButton;
         private GameObject resumeButton;
@@ -63,6 +82,18 @@ namespace TubityWAI
         private static readonly Color StarLit = new Color(1f, 0.85f, 0.25f);
         private static readonly Color StarDim = new Color(0.30f, 0.30f, 0.42f, 0.9f);
         private static Sprite starSprite;
+
+        private RectTransform[] lcButtons = new RectTransform[0];
+
+        // Crash review card
+        private CanvasGroup goOverlayGroup;
+        private RectTransform goCardRect;
+        private TubityXLabel goTitleText;
+        private RectTransform[] goButtons = new RectTransform[0];
+
+        // Set once a review card's button has been pressed, so a second tap can't start a
+        // second exit while the first is still animating.
+        private bool reviewLeaving = false;
 
         // Sphere-count block unlock popup: stacks on top of the level-complete card
         // when a level beat crosses a sphere-count threshold (see GameManager.RecordLevelResult).
@@ -130,9 +161,68 @@ namespace TubityWAI
             CreatePauseButton(gameplayHudRect);
             CreateGameOverPopup(canvasObj.transform);
             CreatePausePopup(canvasObj.transform);
+            CreateExitTutorialPopup(canvasObj.transform);
             CreateLevelCompletePopup(canvasObj.transform);
             CreateSphereUnlockPopup(canvasObj.transform);
             CreateCountdownOverlay(canvasObj.transform);
+            CreateCheckpointToast(canvasObj.transform);
+
+            LevelConfig levelConfig = GameManager.Instance != null ? GameManager.Instance.currentLevelConfig : null;
+            if (levelConfig != null && levelConfig.sandbox) SandboxPanel.Create(safe);
+        }
+
+        // ------------------------------------------------------------------
+        // Checkpoint toast - a brief confirmation that progress is banked.
+        // ------------------------------------------------------------------
+
+        private TubityXLabel checkpointToastText;
+        private float checkpointToastTimer;
+        private const float CheckpointToastDuration = 1.6f;
+
+        private void CreateCheckpointToast(Transform canvas)
+        {
+            GameObject host = new GameObject("CheckpointToast", typeof(RectTransform));
+            host.transform.SetParent(canvas, false);
+            RectTransform rect = host.GetComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0.5f, 0.70f);
+            rect.anchorMax = new Vector2(0.5f, 0.70f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.sizeDelta = new Vector2(700f, 70f);
+
+            checkpointToastText = TubityXUIFactory.AddLabel(host, "CHECKPOINT", 24f,
+                                                            FaceWhite, TubityXUIFactory.Cyan, 5f);
+            Color c = checkpointToastText.color;
+            c.a = 0f;
+            checkpointToastText.color = c;
+        }
+
+        public void ShowCheckpointToast()
+        {
+            ShowToast("CHECKPOINT");
+        }
+
+        /// <summary>A brief centred message - a checkpoint banked, a twin lost or won back.</summary>
+        public void ShowToast(string text)
+        {
+            if (checkpointToastText == null) return;
+            checkpointToastText.Text = text;
+            checkpointToastTimer = CheckpointToastDuration;
+        }
+
+        /// <summary>Fades the checkpoint toast. Unscaled, so it still reads if the game pauses.</summary>
+        private void UpdateCheckpointToast()
+        {
+            if (checkpointToastText == null) return;
+            if (checkpointToastTimer <= 0f) return;
+
+            checkpointToastTimer -= Time.unscaledDeltaTime;
+            float t = Mathf.Clamp01(checkpointToastTimer / CheckpointToastDuration);
+            // Snap in, linger, fade out.
+            float alpha = (t > 0.75f) ? Mathf.InverseLerp(1f, 0.75f, t) : Mathf.Clamp01(t / 0.5f);
+
+            Color c = checkpointToastText.color;
+            c.a = alpha;
+            checkpointToastText.color = c;
         }
 
         // ------------------------------------------------------------------
@@ -188,11 +278,18 @@ namespace TubityWAI
             {
                 if (GameManager.Instance != null) GameManager.Instance.TriggerReplay();
             });
-            AddCardButton(card, "MenuButton", "MAIN MENU", btnSize,
+            GameObject lcMenuButton = AddCardButton(card, "MenuButton", "MAIN MENU", btnSize,
                           TubityXUIFactory.Purple, 0.07f, 118f, false, () =>
             {
-                if (GameManager.Instance != null) GameManager.Instance.ReturnToMainMenu();
+                LeaveReview(AnimateLevelCompleteOut(), () =>
+                {
+                    if (GameManager.Instance != null) GameManager.Instance.ReturnToMainMenu();
+                });
             });
+
+            lcButtons = new[] { lcNextButton.GetComponent<RectTransform>(),
+                                lcReplayButton.GetComponent<RectTransform>(),
+                                lcMenuButton.GetComponent<RectTransform>() };
 
             levelCompletePanel.SetActive(false);
         }
@@ -204,24 +301,45 @@ namespace TubityWAI
             if (lcTitleText != null)
                 lcTitleText.Text = r.isTestLevel || r.levelNumber <= 0 ? "LEVEL COMPLETE" : $"LEVEL {r.levelNumber} COMPLETE";
 
-            for (int i = 0; i < lcStars.Length; i++)
-            {
-                if (lcStars[i] != null) lcStars[i].color = (i < r.stars) ? StarLit : StarDim;
-            }
-
-            if (lcCoinsText != null) lcCoinsText.Text = $"COINS {r.coinsCollected} / {r.coinsSpawned}";
             if (lcShieldsText != null) lcShieldsText.Text = $"SHIELDS {r.shieldsPassed} / {r.shieldsSpawned}";
-            if (lcTimeText != null)
-            {
-                int minutes = Mathf.FloorToInt(r.time / 60f);
-                int seconds = Mathf.FloorToInt(r.time % 60f);
-                lcTimeText.Text = string.Format("TIME {0:00}:{1:00}   SCORE {2:D3}", minutes, seconds, r.score);
-            }
+            int minutes = Mathf.FloorToInt(r.time / 60f);
+            int seconds = Mathf.FloorToInt(r.time % 60f);
 
             if (lcNextButton != null) lcNextButton.SetActive(r.hasNextLevel);
             if (countdownHost != null) countdownHost.SetActive(false);
             levelCompletePanel.SetActive(true);
             StartCoroutine(AnimateLevelCompleteIn());
+
+            // The card's contents land in order once it has opened: stars one by one, then the
+            // numbers counting up, then the buttons. Each element hides itself on the first call,
+            // so nothing shows early.
+            const float starsAt = 0.30f, starGap = 0.17f;
+            for (int i = 0; i < lcStars.Length; i++)
+            {
+                if (lcStars[i] != null) StartCoroutine(StarPop(lcStars[i], i < r.stars, starsAt + i * starGap));
+            }
+
+            float statsAt = starsAt + lcStars.Length * starGap + 0.05f;
+            if (lcCoinsText != null)
+            {
+                StartCoroutine(RiseIn(lcCoinsText.rectTransform, statsAt));
+                StartCoroutine(CountUp(lcCoinsText, r.coinsCollected, statsAt, 0.5f,
+                                       n => $"COINS {n} / {r.coinsSpawned}"));
+            }
+            if (lcShieldsText != null) StartCoroutine(RiseIn(lcShieldsText.rectTransform, statsAt + 0.07f));
+            if (lcTimeText != null)
+            {
+                StartCoroutine(RiseIn(lcTimeText.rectTransform, statsAt + 0.14f));
+                StartCoroutine(CountUp(lcTimeText, r.score, statsAt + 0.14f, 0.5f,
+                                       n => string.Format("TIME {0:00}:{1:00}   SCORE {2:D3}", minutes, seconds, n)));
+            }
+
+            float buttonsAt = statsAt + 0.30f;
+            for (int i = 0; i < lcButtons.Length; i++)
+            {
+                if (lcButtons[i] != null && lcButtons[i].gameObject.activeSelf)
+                    StartCoroutine(RiseIn(lcButtons[i], buttonsAt + i * 0.08f));
+            }
 
             if (r.unlockedSphereCount > 0)
             {
@@ -266,6 +384,48 @@ namespace TubityWAI
             lcCardRect.localScale = Vector3.one;
             lcOverlayGroup.alpha = 1f;
             lcOverlayGroup.interactable = true;
+        }
+
+        /// <summary>
+        /// The pop-in played backwards: the card anticipates with a small swell, then slams flat
+        /// and wide as the backdrop clears, taking a stacked sphere-unlock card with it. Buttons
+        /// stop responding on the first frame so a second tap can't start a second transition.
+        /// </summary>
+        public System.Collections.IEnumerator AnimateLevelCompleteOut()
+        {
+            if (lcOverlayGroup == null || lcCardRect == null || !levelCompletePanel.activeSelf) yield break;
+
+            lcOverlayGroup.interactable = false;
+            lcOverlayGroup.blocksRaycasts = false;
+            bool withUnlock = sphereUnlockPanel != null && sphereUnlockPanel.activeSelf && suOverlayGroup != null;
+            if (withUnlock) suOverlayGroup.interactable = false;
+
+            const float duration = 0.32f;
+            const float c1 = 1.70158f;
+            const float c3 = c1 + 1f;
+            Vector3 endScale = new Vector3(1.25f, 0.05f, 1f);
+
+            float elapsed = 0f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                float anticipate = c3 * t * t * t - c1 * t * t;   // "back" ease-in: dips below 0 first
+
+                Vector3 scale = Vector3.LerpUnclamped(Vector3.one, endScale, anticipate);
+                float alpha = 1f - Mathf.Clamp01((t - 0.35f) / 0.65f);
+                lcCardRect.localScale = scale;
+                lcOverlayGroup.alpha = alpha;
+                if (withUnlock)
+                {
+                    suCardRect.localScale = scale;
+                    suOverlayGroup.alpha = alpha;
+                }
+                yield return null;
+            }
+
+            levelCompletePanel.SetActive(false);
+            if (withUnlock) sphereUnlockPanel.SetActive(false);
         }
 
         // ------------------------------------------------------------------
@@ -474,87 +634,148 @@ namespace TubityWAI
         }
 
         // ------------------------------------------------------------------
-        // Top-centre stats: SCORE / COINS / TIME
+        // Top-right stats: score, coins, time - one framed pill each, icon + value
         // ------------------------------------------------------------------
         private void CreateStatsPanel(RectTransform safe)
         {
-            Vector2 size = new Vector2(340f, 132f);
+            GameObject columnObj = new GameObject("HudColumn", typeof(RectTransform));
+            columnObj.transform.SetParent(safe, false);
+            hudColumn = columnObj.GetComponent<RectTransform>();
+            hudColumn.anchorMin = new Vector2(1f, 1f);
+            hudColumn.anchorMax = new Vector2(1f, 1f);
+            hudColumn.pivot = new Vector2(1f, 1f);
+            hudColumn.anchoredPosition = new Vector2(-EdgeMargin, -EdgeMargin);
+            StackVertically(columnObj);
 
-            // Pivot is the panel centre, so offset by half the height plus the
-            // margin - anchoring the centre a few pixels below the edge (the
-            // old layout) leaves half the panel off screen.
-            GameObject panelObj = TubityXUIFactory.CreatePanel(
-                safe, size, TubityXUIFactory.Cyan,
-                new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
-                new Vector2(0f, -(size.y * 0.5f + EdgeMargin)), 20f);
-            panelObj.name = "HUDPanel";
-            panelObj.GetComponent<TubityXPanel>().raycastTarget = false;   // never eat gameplay taps
+            // The stats get a group of their own so the tutorial can hide them without taking
+            // the powerups with them.
+            GameObject statsObj = new GameObject("Stats", typeof(RectTransform));
+            statsObj.transform.SetParent(hudColumn, false);
+            StackVertically(statsObj, sizeToFit: false);   // the column sizes it
+            statsPanelObj = statsObj;
+            statsObj.SetActive(showStatsPanel);
 
-            scoreText = AddRow(panelObj, "ScoreText", 0.64f, 1.00f, -6f, "SCORE: 000", 17f,
-                               FaceWhite, TubityXUIFactory.Cyan);
-            coinText = AddRow(panelObj, "CoinText", 0.32f, 0.64f, 0f, "COINS: 000", 14f,
-                              TubityXUIFactory.Gold, TubityXUIFactory.Gold);
-            timeText = AddRow(panelObj, "TimeText", 0.00f, 0.32f, 6f, "TIME: 00:00", 13f,
-                              CoolWhite, TubityXUIFactory.Blue);
+            scoreText = CreatePill(statsObj.transform, "ScorePill", StarSprite(), TubityXUIFactory.Cyan, FaceWhite, "000");
+            coinText = CreatePill(statsObj.transform, "CoinPill", HudIcons.Coin(), TubityXUIFactory.Gold, TubityXUIFactory.Gold, "000");
+            timeText = CreatePill(statsObj.transform, "TimePill", HudIcons.Clock(), TubityXUIFactory.Blue, CoolWhite, "00:00");
         }
 
-        private static TubityXLabel AddRow(GameObject panel, string name, float yMin, float yMax,
-                                           float yOffset, string text, float cap,
-                                           Color face, Color accent)
+        /// <summary>Show or hide the stats panel; safe to call before or after the HUD is built.</summary>
+        public void SetStatsPanelVisible(bool visible)
         {
-            GameObject host = new GameObject(name, typeof(RectTransform));
-            host.transform.SetParent(panel.transform, false);
+            showStatsPanel = visible;
+            if (statsPanelObj != null) statsPanelObj.SetActive(visible);
+        }
+
+        /// <summary>Right-aligned vertical stack. The outermost one sizes itself to its contents;
+        /// a stack inside another is sized by its parent's layout.</summary>
+        private static void StackVertically(GameObject obj, bool sizeToFit = true)
+        {
+            VerticalLayoutGroup stack = obj.AddComponent<VerticalLayoutGroup>();
+            stack.spacing = PillGap;
+            stack.childAlignment = TextAnchor.UpperRight;
+            stack.childControlWidth = true;
+            stack.childControlHeight = true;
+            stack.childForceExpandWidth = false;
+            stack.childForceExpandHeight = false;
+            if (!sizeToFit) return;
+
+            ContentSizeFitter fit = obj.AddComponent<ContentSizeFitter>();
+            fit.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+            fit.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+        }
+
+        /// <summary>One framed pill: an icon on the left in the accent colour, the value right-aligned.</summary>
+        private static GameObject CreatePillFrame(Transform parent, string name, Sprite icon, Color accent)
+        {
+            GameObject pill = TubityXUIFactory.CreatePanel(
+                parent, new Vector2(PillWidth, PillHeight), accent,
+                new Vector2(1f, 1f), new Vector2(1f, 1f), Vector2.zero, PillHeight * 0.5f);
+            pill.name = name;
+            pill.GetComponent<TubityXPanel>().raycastTarget = false;   // never eat gameplay taps
+
+            LayoutElement size = pill.AddComponent<LayoutElement>();
+            size.preferredWidth = PillWidth;
+            size.preferredHeight = PillHeight;
+
+            GameObject iconObj = new GameObject("Icon", typeof(RectTransform));
+            iconObj.transform.SetParent(pill.transform, false);
+            RectTransform ir = iconObj.GetComponent<RectTransform>();
+            ir.anchorMin = new Vector2(0f, 0.5f);
+            ir.anchorMax = new Vector2(0f, 0.5f);
+            ir.pivot = new Vector2(0f, 0.5f);
+            ir.anchoredPosition = new Vector2(PillHeight * 0.32f, 0f);
+            ir.sizeDelta = new Vector2(PillIcon, PillIcon);
+            Image img = iconObj.AddComponent<Image>();
+            img.sprite = icon;
+            img.color = accent;
+            img.preserveAspect = true;
+            img.raycastTarget = false;
+
+            return pill;
+        }
+
+        private static TubityXLabel CreatePill(Transform parent, string name, Sprite icon, Color accent,
+                                               Color face, string text)
+        {
+            GameObject pill = CreatePillFrame(parent, name, icon, accent);
+
+            GameObject host = new GameObject("Value", typeof(RectTransform));
+            host.transform.SetParent(pill.transform, false);
             RectTransform r = host.GetComponent<RectTransform>();
-            r.anchorMin = new Vector2(0f, yMin);
-            r.anchorMax = new Vector2(1f, yMax);
-            r.pivot = new Vector2(0.5f, 0.5f);
-            r.anchoredPosition = new Vector2(0f, yOffset);
-            r.sizeDelta = Vector2.zero;
-            return TubityXUIFactory.AddLabel(host, text, cap, face, accent, cap * 0.16f);
+            r.anchorMin = Vector2.zero;
+            r.anchorMax = Vector2.one;
+            r.offsetMin = new Vector2(PillHeight * 0.32f + PillIcon + 8f, 0f);
+            r.offsetMax = new Vector2(-PillHeight * 0.42f, 0f);
+            return TubityXUIFactory.AddLabel(host, text, 17f, face, accent, 2.5f, TubityXLabel.Align.Right);
         }
 
         // ------------------------------------------------------------------
-        // Top-right powerup timer: a round glass dial with a radial arc
+        // Powerup pills, stacked under the stats in the same column
         // ------------------------------------------------------------------
         private void CreatePowerupPanel(RectTransform safe)
         {
-            float d = 150f;
-            float inset = d * 0.5f + EdgeMargin;
+            invinciblePill = CreatePowerupPill("InvinciblePill", HudIcons.Bolt(), PowerCyan, out invincibleFill);
+            magnetPill = CreatePowerupPill("MagnetPill", HudIcons.Magnet(), PowerPurple, out magnetFill);
+        }
 
-            powerupPanel = TubityXUIFactory.CreatePanel(
-                safe, new Vector2(d, d), PowerCyan,
-                new Vector2(1f, 1f), new Vector2(1f, 1f),
-                new Vector2(-inset, -inset), d * 0.5f);      // radius = half size -> a circle
-            powerupPanel.name = "PowerupPanel";
-            powerupChrome = powerupPanel.GetComponent<TubityXPanel>();
-            powerupChrome.raycastTarget = false;
+        private GameObject CreatePowerupPill(string name, Sprite icon, Color accent, out RectTransform fill)
+        {
+            GameObject pill = CreatePillFrame(hudColumn, name, icon, accent);
 
-            GameObject arcObj = new GameObject("PowerupArc", typeof(RectTransform));
-            arcObj.transform.SetParent(powerupPanel.transform, false);
-            RectTransform arcRect = arcObj.GetComponent<RectTransform>();
-            arcRect.anchorMin = Vector2.zero;
-            arcRect.anchorMax = Vector2.one;
-            arcRect.sizeDelta = new Vector2(-22f, -22f);
+            // Track and fill: the fill's right edge is the time left.
+            GameObject track = new GameObject("Track", typeof(RectTransform));
+            track.transform.SetParent(pill.transform, false);
+            RectTransform tr = track.GetComponent<RectTransform>();
+            tr.anchorMin = new Vector2(0f, 0.5f);
+            tr.anchorMax = new Vector2(1f, 0.5f);
+            tr.offsetMin = new Vector2(PillHeight * 0.32f + PillIcon + 10f, -4f);
+            tr.offsetMax = new Vector2(-PillHeight * 0.42f, 4f);
+            Image trackImg = track.AddComponent<Image>();
+            trackImg.color = new Color(accent.r, accent.g, accent.b, 0.18f);
+            trackImg.raycastTarget = false;
 
-            powerupArc = arcObj.AddComponent<Image>();
-            powerupArc.sprite = GlassUIFactory.GetRingSprite();
-            powerupArc.type = Image.Type.Filled;
-            powerupArc.fillMethod = Image.FillMethod.Radial360;
-            powerupArc.fillOrigin = (int)Image.Origin360.Top;
-            powerupArc.fillClockwise = false;
-            powerupArc.color = PowerCyan;
-            powerupArc.raycastTarget = false;
+            GameObject bar = new GameObject("Fill", typeof(RectTransform));
+            bar.transform.SetParent(track.transform, false);
+            fill = bar.GetComponent<RectTransform>();
+            fill.anchorMin = Vector2.zero;
+            fill.anchorMax = Vector2.one;
+            fill.offsetMin = Vector2.zero;
+            fill.offsetMax = Vector2.zero;
+            Image fillImg = bar.AddComponent<Image>();
+            fillImg.color = accent;
+            fillImg.raycastTarget = false;
 
-            GameObject puTextObj = new GameObject("PowerupText", typeof(RectTransform));
-            puTextObj.transform.SetParent(powerupPanel.transform, false);
-            RectTransform puTextRect = puTextObj.GetComponent<RectTransform>();
-            puTextRect.anchorMin = new Vector2(0.12f, 0.30f);
-            puTextRect.anchorMax = new Vector2(0.88f, 0.70f);
-            puTextRect.sizeDelta = Vector2.zero;
+            pill.SetActive(false);
+            return pill;
+        }
 
-            powerupText = TubityXUIFactory.AddLabel(puTextObj, "INVINCIBLE", 12f, PowerCyan, PowerCyan, 1.5f);
-
-            powerupPanel.SetActive(false);
+        /// <summary>Shows a powerup pill while its effect runs, its bar at the fraction left.</summary>
+        private static void SetPowerupPill(GameObject pill, RectTransform fill, bool active, float remaining)
+        {
+            if (pill == null) return;
+            if (pill.activeSelf != active) pill.SetActive(active);
+            if (active) fill.anchorMax = new Vector2(Mathf.Clamp01(remaining), 1f);
         }
 
         // ------------------------------------------------------------------
@@ -634,12 +855,15 @@ namespace TubityWAI
             RectTransform safe;
             gameOverPanel = CreateOverlay(canvas, "GameOverPanel", out safe);
 
+            goOverlayGroup = gameOverPanel.AddComponent<CanvasGroup>();
+
             GameObject card = TubityXUIFactory.CreatePanel(
                 safe, new Vector2(520f, 360f), DangerRed,
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, 26f);
             card.name = "CardPanel";
+            goCardRect = card.GetComponent<RectTransform>();
 
-            AddCardLabel(card, "TitleText", 0.74f, 0.96f, "GAME OVER", 30f, FaceWhite, DangerRed);
+            goTitleText = AddCardLabel(card, "TitleText", 0.74f, 0.96f, "GAME OVER", 30f, FaceWhite, DangerRed);
             finalScoreText = AddCardLabel(card, "ScoreText", 0.54f, 0.68f, "FINAL SCORE: 000", 15f,
                                           FaceWhite, TubityXUIFactory.Cyan);
             finalCoinsText = AddCardLabel(card, "CoinsText", 0.40f, 0.54f, "COINS COLLECTED: 000", 15f,
@@ -649,14 +873,22 @@ namespace TubityWAI
             replayButton = AddCardButton(card, "ReplayButton", "REPLAY", btnSize,
                                          TubityXUIFactory.Blue, 0.18f, -118f, true, () =>
             {
-                if (GameManager.Instance != null) GameManager.Instance.TriggerReplay();
+                LeaveReview(SlamCardOut(goOverlayGroup, goCardRect, gameOverPanel), () =>
+                {
+                    if (GameManager.Instance != null) GameManager.Instance.TriggerReplay();
+                });
             });
 
-            AddCardButton(card, "MenuButton", "MAIN MENU", btnSize,
+            GameObject goMenuButton = AddCardButton(card, "MenuButton", "MAIN MENU", btnSize,
                           TubityXUIFactory.Purple, 0.18f, 118f, false, () =>
             {
-                if (GameManager.Instance != null) GameManager.Instance.ReturnToMainMenu();
+                LeaveReview(SlamCardOut(goOverlayGroup, goCardRect, gameOverPanel), () =>
+                {
+                    if (GameManager.Instance != null) GameManager.Instance.ReturnToMainMenu();
+                });
             });
+
+            goButtons = new[] { replayButton.GetComponent<RectTransform>(), goMenuButton.GetComponent<RectTransform>() };
 
             gameOverPanel.SetActive(false);
         }
@@ -665,11 +897,13 @@ namespace TubityWAI
         {
             RectTransform safe;
             pausePanel = CreateOverlay(canvas, "PausePanel", out safe);
+            pauseGroup = pausePanel.AddComponent<CanvasGroup>();
 
             GameObject card = TubityXUIFactory.CreatePanel(
                 safe, new Vector2(460f, 400f), TubityXUIFactory.Cyan,
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, 26f);
             card.name = "PauseCardPanel";
+            pauseCardRect = card.GetComponent<RectTransform>();
 
             AddCardLabel(card, "PauseTitleText", 0.76f, 0.97f, "PAUSED", 30f, FaceWhite, TubityXUIFactory.Cyan);
 
@@ -677,23 +911,82 @@ namespace TubityWAI
             resumeButton = AddCardButton(card, "ResumeButton", "RESUME", btnSize,
                                          TubityXUIFactory.Blue, 0.56f, 0f, true, TogglePauseMenu);
 
+            // The world stays paused through the card's exit: GameManager clears the level away
+            // and flies it back in, restarting time itself at the hand-off.
             AddCardButton(card, "PauseReplayButton", "REPLAY", btnSize,
                           TubityXUIFactory.Cyan, 0.37f, 0f, false, () =>
             {
-                Time.timeScale = 1f;
-                IsPaused = false;
-                if (GameManager.Instance != null) GameManager.Instance.TriggerReplay();
+                LeaveReview(SlamCardOut(pauseGroup, pauseCardRect, pausePanel), () =>
+                {
+                    IsPaused = false;
+                    if (GameManager.Instance != null) GameManager.Instance.TriggerReplay();
+                });
             });
 
             AddCardButton(card, "PauseMenuButton", "MAIN MENU", btnSize,
                           TubityXUIFactory.Purple, 0.18f, 0f, false, () =>
             {
+                // Leaving the tutorial part-way deserves a second look; the game stays paused meanwhile.
+                if (FTUEManager.Instance != null && exitTutorialPanel != null)
+                {
+                    pausePanel.SetActive(false);
+                    exitTutorialPanel.SetActive(true);
+                    if (TVOSMenuNavigator.Instance != null && keepGoingButton != null)
+                        TVOSMenuNavigator.Instance.SetFocus(keepGoingButton);
+                    return;
+                }
+
                 Time.timeScale = 1f;
                 IsPaused = false;
                 if (GameManager.Instance != null) GameManager.Instance.ReturnToMainMenu();
             });
 
             pausePanel.SetActive(false);
+        }
+
+        /// <summary>
+        /// Confirmation shown when MAIN MENU is chosen from the pause popup during the
+        /// tutorial. KEEP GOING returns to the pause popup; LEAVE ends the run.
+        /// </summary>
+        private void CreateExitTutorialPopup(Transform canvas)
+        {
+            RectTransform safe;
+            exitTutorialPanel = CreateOverlay(canvas, "ExitTutorialPanel", out safe);
+
+            GameObject card = TubityXUIFactory.CreatePanel(
+                safe, new Vector2(560f, 340f), TubityXUIFactory.Gold,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, 26f);
+            card.name = "ExitTutorialCardPanel";
+
+            AddCardLabel(card, "TitleText", 0.72f, 0.95f, "LEAVE THE TUTORIAL?", 26f, FaceWhite, TubityXUIFactory.Gold);
+            AddCardLabel(card, "SubText", 0.56f, 0.70f, "YOU CAN REPLAY IT ANY TIME FROM HOW TO PLAY", 12f,
+                         CoolWhite, TubityXUIFactory.Cyan);
+
+            Vector2 btnSize = new Vector2(300f, 58f);
+            keepGoingButton = AddCardButton(card, "KeepGoingButton", "KEEP GOING", btnSize,
+                                            TubityXUIFactory.Blue, 0.38f, 0f, true, () =>
+            {
+                exitTutorialPanel.SetActive(false);
+                if (pausePanel != null)
+                {
+                    pausePanel.SetActive(true);
+                    if (pausePop != null) StopCoroutine(pausePop);
+                    pausePop = StartCoroutine(PopCardIn(pauseGroup, pauseCardRect));
+                }
+                if (TVOSMenuNavigator.Instance != null && resumeButton != null)
+                    TVOSMenuNavigator.Instance.SetFocus(resumeButton);
+            });
+
+            AddCardButton(card, "LeaveTutorialButton", "LEAVE", btnSize,
+                          TubityXUIFactory.Purple, 0.16f, 0f, false, () =>
+            {
+                exitTutorialPanel.SetActive(false);
+                Time.timeScale = 1f;
+                IsPaused = false;
+                if (GameManager.Instance != null) GameManager.Instance.ReturnToMainMenu();
+            });
+
+            exitTutorialPanel.SetActive(false);
         }
 
         private void CreateEventSystem()
@@ -712,19 +1005,88 @@ namespace TubityWAI
 
         public void TogglePauseMenu()
         {
-            if (GameManager.Instance != null && GameManager.Instance.IsGameOver) return;
+            // Past the finish gate the review card is the only menu; the tube keeps moving under it.
+            if (GameManager.Instance != null && (GameManager.Instance.IsGameOver || GameManager.Instance.IsLevelComplete)) return;
+            // A card's button has been pressed and its exit (or a replay) is under way.
+            if (reviewLeaving || pauseClosing || (GameManager.Instance != null && GameManager.Instance.IsTransitioning)) return;
 
-            IsPaused = !IsPaused;
-            Time.timeScale = IsPaused ? 0f : 1f;
+            // A pop still running is cut short and the card put back to rest, so whatever comes
+            // next - the slam-out, or the next pause - starts from the top.
+            if (pausePop != null) { StopCoroutine(pausePop); pausePop = null; }
+            if (pauseCardRect != null) pauseCardRect.localScale = Vector3.one;
+            if (pauseGroup != null) { pauseGroup.alpha = 1f; pauseGroup.interactable = true; }
 
-            if (pausePanel != null)
+            if (!IsPaused)
             {
-                pausePanel.SetActive(IsPaused);
-                if (IsPaused && TVOSMenuNavigator.Instance != null && resumeButton != null)
+                IsPaused = true;
+                Time.timeScale = 0f;
+                if (pausePanel != null)
                 {
-                    TVOSMenuNavigator.Instance.SetFocus(resumeButton);
+                    pausePanel.SetActive(true);
+                    pausePop = StartCoroutine(PopCardIn(pauseGroup, pauseCardRect));
+                    if (TVOSMenuNavigator.Instance != null && resumeButton != null)
+                        TVOSMenuNavigator.Instance.SetFocus(resumeButton);
                 }
+                return;
             }
+
+            // Unpausing from the keyboard / remote while the exit confirm is up dismisses it too;
+            // the pause card is already hidden behind it, so there is nothing to slam out.
+            if (exitTutorialPanel != null && exitTutorialPanel.activeSelf) exitTutorialPanel.SetActive(false);
+
+            if (pausePanel != null && pausePanel.activeSelf)
+            {
+                pauseClosing = true;
+                StartCoroutine(ResumeAfterSlam());
+                return;
+            }
+
+            IsPaused = false;
+            Time.timeScale = 1f;
+        }
+
+        /// <summary>Resume: the card slams out with the world still held, then play picks up.</summary>
+        private System.Collections.IEnumerator ResumeAfterSlam()
+        {
+            yield return StartCoroutine(SlamCardOut(pauseGroup, pauseCardRect, pausePanel));
+            IsPaused = false;
+            Time.timeScale = 1f;
+            pauseClosing = false;
+        }
+
+        /// <summary>
+        /// A card's generic pop-in, the same spring as the level-complete card's: the backdrop
+        /// fades in while the card opens from a flat squash, overshoots and settles. Unscaled
+        /// time, so it plays with the game paused. Buttons wake once it has landed.
+        /// </summary>
+        private System.Collections.IEnumerator PopCardIn(CanvasGroup group, RectTransform card)
+        {
+            if (group == null || card == null) yield break;
+
+            const float duration = 0.4f;
+            const float c1 = 1.70158f;
+            const float c3 = c1 + 1f;
+            Vector3 startScale = new Vector3(1.25f, 0.05f, 1f);
+            card.localScale = startScale;
+            group.alpha = 0f;
+            group.interactable = false;
+
+            float elapsed = 0f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                float tm1 = t - 1f;
+                float overshoot = 1f + c3 * tm1 * tm1 * tm1 + c1 * tm1 * tm1;
+                card.localScale = Vector3.LerpUnclamped(startScale, Vector3.one, overshoot);
+                group.alpha = Mathf.Clamp01(t / 0.6f);
+                yield return null;
+            }
+
+            card.localScale = Vector3.one;
+            group.alpha = 1f;
+            group.interactable = true;
+            if (card == pauseCardRect) pausePop = null;
         }
 
         /// <summary>Fades and shrinks the gameplay-only HUD (stats, powerup dial, pause button)
@@ -757,17 +1119,256 @@ namespace TubityWAI
             gameplayHudGroup.blocksRaycasts = false;
         }
 
+        /// <summary>The exit animation in reverse, for a run entered in flight (the level-to-level
+        /// hand-off) so the stats don't pop on over a level that is still assembling.</summary>
+        public void PlayGameplayHudEnterAnimation()
+        {
+            if (gameplayHudGroup == null) return;
+            StartCoroutine(AnimateGameplayHudIn());
+        }
+
+        private System.Collections.IEnumerator AnimateGameplayHudIn()
+        {
+            RectTransform rt = gameplayHudGroup.GetComponent<RectTransform>();
+            const float duration = 0.45f;
+            float elapsed = 0f;
+            gameplayHudGroup.alpha = 0f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                float ease = 1f - (1f - t) * (1f - t); // decelerates in
+
+                gameplayHudGroup.alpha = ease;
+                rt.localScale = Vector3.one * Mathf.Lerp(0.85f, 1f, ease);
+                yield return null;
+            }
+
+            gameplayHudGroup.alpha = 1f;
+            rt.localScale = Vector3.one;
+        }
+
+        // ------------------------------------------------------------------
+        // Review card animation: the crash card, and the pieces both cards share
+        // ------------------------------------------------------------------
+
+        /// <summary>A beat after the crash before the card comes, so the hit registers first.</summary>
+        private const float GameOverBeat = 0.35f;
+        /// <summary>How long the card's pop-in takes (PopCardIn).</summary>
+        private const float GameOverPop = 0.40f;
+
+        /// <summary>
+        /// The crash card: held back for a beat so the hit registers, then the same pop-in as
+        /// every other card, and the title flickers like a failing sign as it lands. Unscaled
+        /// time throughout - the world is paused under it.
+        /// </summary>
+        private System.Collections.IEnumerator AnimateGameOverIn()
+        {
+            if (goOverlayGroup == null || goCardRect == null) yield break;
+
+            // Hidden through the beat, in the pose the pop starts from.
+            goOverlayGroup.alpha = 0f;
+            goOverlayGroup.interactable = false;
+            goCardRect.anchoredPosition = Vector2.zero;
+            goCardRect.localRotation = Quaternion.identity;
+            goCardRect.localScale = new Vector3(1.25f, 0.05f, 1f);
+
+            yield return new WaitForSecondsRealtime(GameOverBeat);
+            yield return StartCoroutine(PopCardIn(goOverlayGroup, goCardRect));
+
+            if (goTitleText != null) StartCoroutine(Flicker(goTitleText));
+        }
+
+        /// <summary>
+        /// A card's generic exit, the same motion as the level-complete card's: a small swell,
+        /// then it slams flat and wide as its backdrop clears. Unscaled time, for paused cards.
+        /// </summary>
+        private System.Collections.IEnumerator SlamCardOut(CanvasGroup group, RectTransform card, GameObject panel)
+        {
+            if (group == null || card == null || panel == null || !panel.activeSelf) yield break;
+
+            group.interactable = false;
+            group.blocksRaycasts = false;
+
+            const float duration = 0.32f;
+            const float c1 = 1.70158f;
+            const float c3 = c1 + 1f;
+            Vector3 endScale = new Vector3(1.25f, 0.05f, 1f);
+
+            float elapsed = 0f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                float anticipate = c3 * t * t * t - c1 * t * t;
+                card.localScale = Vector3.LerpUnclamped(Vector3.one, endScale, anticipate);
+                group.alpha = 1f - Mathf.Clamp01((t - 0.35f) / 0.65f);
+                yield return null;
+            }
+
+            panel.SetActive(false);
+            card.localScale = Vector3.one;
+            group.alpha = 1f;
+            group.interactable = true;
+            group.blocksRaycasts = true;
+        }
+
+        /// <summary>Plays a card's exit, then does what the button asked. Ignores repeat presses.</summary>
+        private void LeaveReview(System.Collections.IEnumerator exit, System.Action then)
+        {
+            if (reviewLeaving) return;
+            reviewLeaving = true;
+            StartCoroutine(ExitThen(exit, then));
+        }
+
+        private System.Collections.IEnumerator ExitThen(System.Collections.IEnumerator exit, System.Action then)
+        {
+            yield return StartCoroutine(exit);
+            then?.Invoke();
+        }
+
+        private static CanvasGroup GroupOf(Component c)
+        {
+            CanvasGroup g = c.GetComponent<CanvasGroup>();
+            return g != null ? g : c.gameObject.AddComponent<CanvasGroup>();
+        }
+
+        /// <summary>
+        /// Hides an element at once, then after `delay` brings it up into place from a little
+        /// below with a slight overshoot. A hidden button takes no taps until it starts to show.
+        /// </summary>
+        private System.Collections.IEnumerator RiseIn(RectTransform rt, float delay,
+                                                      float rise = 26f, float duration = 0.3f)
+        {
+            CanvasGroup g = GroupOf(rt);
+            Vector2 home = rt.anchoredPosition;
+            g.alpha = 0f;
+            g.interactable = false;
+            g.blocksRaycasts = false;
+            rt.anchoredPosition = home - new Vector2(0f, rise);
+
+            if (delay > 0f) yield return new WaitForSecondsRealtime(delay);
+            g.interactable = true;
+            g.blocksRaycasts = true;
+
+            const float c1 = 1.2f, c3 = c1 + 1f;   // a gentler "back" than the card's own spring
+            float elapsed = 0f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                float tm1 = t - 1f;
+                float ease = 1f + c3 * tm1 * tm1 * tm1 + c1 * tm1 * tm1;
+                rt.anchoredPosition = home - new Vector2(0f, rise * (1f - ease));
+                g.alpha = Mathf.Clamp01(t * 1.6f);
+                yield return null;
+            }
+
+            rt.anchoredPosition = home;
+            g.alpha = 1f;
+        }
+
+        /// <summary>Counts a number up from zero on an ease-out, so it slows as it lands.</summary>
+        private System.Collections.IEnumerator CountUp(TubityXLabel label, int target, float delay,
+                                                       float duration, System.Func<int, string> format)
+        {
+            label.Text = format(0);
+            if (delay > 0f) yield return new WaitForSecondsRealtime(delay);
+
+            float elapsed = 0f;
+            while (elapsed < duration && target > 0)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                float ease = 1f - (1f - t) * (1f - t);
+                label.Text = format(Mathf.RoundToInt(target * ease));
+                yield return null;
+            }
+            label.Text = format(target);
+        }
+
+        /// <summary>
+        /// A star lands: earned ones punch in from nothing with a spin and a white-hot flash
+        /// cooling to gold, with a chime; unearned ones just settle in quietly.
+        /// </summary>
+        private System.Collections.IEnumerator StarPop(Image star, bool lit, float delay)
+        {
+            RectTransform rt = star.rectTransform;
+            rt.localScale = Vector3.zero;
+            rt.localRotation = Quaternion.identity;
+            star.color = lit ? StarLit : StarDim;
+
+            if (delay > 0f) yield return new WaitForSecondsRealtime(delay);
+            if (lit && player != null) player.PlaySound(ProceduralAudio.GetCoinSound());
+
+            const float duration = 0.34f;
+            const float c1 = 2.6f, c3 = c1 + 1f;   // a big overshoot: the star punches past full size
+            float elapsed = 0f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                if (lit)
+                {
+                    float tm1 = t - 1f;
+                    float ease = 1f + c3 * tm1 * tm1 * tm1 + c1 * tm1 * tm1;
+                    rt.localScale = Vector3.one * ease;
+                    rt.localRotation = Quaternion.Euler(0f, 0f, Mathf.Lerp(-45f, 0f, 1f - (1f - t) * (1f - t)));
+                    star.color = Color.Lerp(Color.white, StarLit, t);
+                }
+                else
+                {
+                    rt.localScale = Vector3.one * Mathf.Lerp(0.6f, 1f, 1f - (1f - t) * (1f - t));
+                }
+                yield return null;
+            }
+
+            rt.localScale = Vector3.one;
+            rt.localRotation = Quaternion.identity;
+            star.color = lit ? StarLit : StarDim;
+        }
+
+        /// <summary>A failing-sign flicker: a few uneven drop-outs, then steady.</summary>
+        private System.Collections.IEnumerator Flicker(TubityXLabel label)
+        {
+            CanvasGroup g = GroupOf(label);
+            float[] beats = { 0.05f, 0.04f, 0.07f, 0.03f, 0.09f, 0.05f };
+            for (int i = 0; i < beats.Length; i++)
+            {
+                g.alpha = (i % 2 == 0) ? 0.2f : 1f;
+                yield return new WaitForSecondsRealtime(beats[i]);
+            }
+            g.alpha = 1f;
+        }
+
         public void ShowGameOverScreen()
         {
             if (gameOverPanel == null) return;
 
-            if (player != null)
-            {
-                if (finalScoreText != null) finalScoreText.Text = "FINAL SCORE: " + player.Score.ToString("D3");
-                if (finalCoinsText != null) finalCoinsText.Text = "COINS COLLECTED: " + player.Coins.ToString("D3");
-            }
+            int score = player != null ? player.Score : 0;
+            int coins = player != null ? player.Coins : 0;
 
             gameOverPanel.SetActive(true);
+            StartCoroutine(AnimateGameOverIn());
+
+            // Timed from the card's landing (see AnimateGameOverIn): the numbers count up, then
+            // the buttons rise in.
+            const float landed = GameOverBeat + GameOverPop;
+            if (finalScoreText != null)
+            {
+                StartCoroutine(RiseIn(finalScoreText.rectTransform, landed + 0.12f));
+                StartCoroutine(CountUp(finalScoreText, score, landed + 0.12f, 0.55f, n => "FINAL SCORE: " + n.ToString("D3")));
+            }
+            if (finalCoinsText != null)
+            {
+                StartCoroutine(RiseIn(finalCoinsText.rectTransform, landed + 0.20f));
+                StartCoroutine(CountUp(finalCoinsText, coins, landed + 0.20f, 0.55f, n => "COINS COLLECTED: " + n.ToString("D3")));
+            }
+            for (int i = 0; i < goButtons.Length; i++)
+            {
+                if (goButtons[i] != null) StartCoroutine(RiseIn(goButtons[i], landed + 0.45f + i * 0.08f));
+            }
 
             if (TVOSMenuNavigator.Instance != null && replayButton != null)
             {
@@ -775,19 +1376,11 @@ namespace TubityWAI
             }
         }
 
-        private void SetPowerup(string label, Color tint, float fill)
-        {
-            if (!powerupPanel.activeSelf) powerupPanel.SetActive(true);
-            powerupText.Text = label;
-            powerupText.color = tint;
-            powerupText.RimColor = tint;
-            powerupArc.color = tint;
-            if (powerupChrome != null && powerupChrome.RimColor != tint) powerupChrome.RimColor = tint;
-            powerupArc.fillAmount = fill;
-        }
-
         private void Update()
         {
+            // The toast fades on its own clock, before any of the early-outs below.
+            UpdateCheckpointToast();
+
             if (player == null || scoreText == null || coinText == null || timeText == null) return;
 
             // Only update active UI stats if game is not over (or the finish gate has been crossed)
@@ -795,27 +1388,18 @@ namespace TubityWAI
 
             UpdateCountdown();
 
-            scoreText.Text = "SCORE: " + player.Score.ToString("D3");
-            coinText.Text = "COINS: " + player.Coins.ToString("D3");
+            scoreText.Text = player.Score.ToString("D3");
+            coinText.Text = player.Coins.ToString("D3");
 
             int minutes = Mathf.FloorToInt(player.TimeElapsed / 60f);
             int seconds = Mathf.FloorToInt(player.TimeElapsed % 60f);
-            timeText.Text = string.Format("TIME: {0:00}:{1:00}", minutes, seconds);
+            timeText.Text = string.Format("{0:00}:{1:00}", minutes, seconds);
 
-            if (player.IsInvincible)
-            {
-                SetPowerup("INVINCIBLE", PowerCyan,
+            // Both can run at once; each has its own pill, stacked under the stats.
+            SetPowerupPill(invinciblePill, invincibleFill, player.IsInvincible,
                            player.InvincibilityTimeRemaining / player.InvincibilityTotalTime);
-            }
-            else if (player.IsMagnetActive)
-            {
-                SetPowerup("MAGNET", PowerPurple,
+            SetPowerupPill(magnetPill, magnetFill, player.IsMagnetActive,
                            player.MagnetTimeRemaining / player.MagnetTotalTime);
-            }
-            else if (powerupPanel.activeSelf)
-            {
-                powerupPanel.SetActive(false);
-            }
         }
     }
 }

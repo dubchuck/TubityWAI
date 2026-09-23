@@ -50,6 +50,30 @@ namespace TubityWAI
             return neonHaloMaterial;
         }
 
+        private static Material arcBorderMaterial;
+
+        /// <summary>
+        /// Unlit material for arc outlines. Unlit on purpose: the outline has to hold the same
+        /// brightness however the level is lit, since it is the one part of an arc that still
+        /// reads once distance and bloom have flattened the body. Culling is off so the strip
+        /// shows regardless of which way its triangles wound.
+        /// </summary>
+        private static Material ArcBorderMaterial()
+        {
+            if (arcBorderMaterial == null)
+            {
+                Shader s = Shader.Find("Universal Render Pipeline/Unlit");
+                if (s == null) s = Shader.Find("Unlit/Color");
+                if (s == null) s = Shader.Find("Sprites/Default");
+                if (s == null) return null;
+
+                arcBorderMaterial = new Material(s);
+                arcBorderMaterial.name = "ArcBorder";
+                if (arcBorderMaterial.HasProperty("_Cull")) arcBorderMaterial.SetFloat("_Cull", 0f);
+            }
+            return arcBorderMaterial;
+        }
+
         private static bool IsNeonBloom(LevelConfig config)
         {
             return config != null && config.neonBloom;
@@ -151,6 +175,11 @@ namespace TubityWAI
             mr.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
         }
 
+        /// <summary>True once the segment has built its mesh and contents for where it stands.
+        /// Anything that moves the segment for show (SegmentFlyIn) waits for this, because
+        /// Populate lays everything out from the segment's position at the time.</summary>
+        public bool IsPopulated { get; private set; }
+
         private void Start()
         {
             Populate();
@@ -179,9 +208,11 @@ namespace TubityWAI
             SpawnFinishGate(config);
             SpawnCoins();
             SpawnObstacles();
+            KeepPickupsOffArcs(config);
             SpawnCityFlyby();
 
             if (seeded) Random.state = previous;
+            IsPopulated = true;
         }
 
         private int SegmentSeed(int levelSeed, float z)
@@ -260,7 +291,7 @@ namespace TubityWAI
             {
                 CityGenerator.GenerateCityForSegment(this.gameObject, length, radius, config);
             }
-            else if (config != null && config.environment != EnvironmentTheme.None)
+            else if (config != null && config.HasThemedEnvironment)
             {
                 EnvironmentScenery.Decorate(this.gameObject, length, radius, config);
             }
@@ -351,7 +382,12 @@ namespace TubityWAI
             GetComponent<MeshFilter>().sharedMesh = mesh;
             if (tunnelMaterial != null)
             {
-                GetComponent<MeshRenderer>().sharedMaterial = tunnelMaterial;
+                MeshRenderer tubeRenderer = GetComponent<MeshRenderer>();
+                tubeRenderer.sharedMaterial = tunnelMaterial;
+                // The tube wraps the camera, so anything it cast would land on the player rather
+                // than on the world, and it is transparent in themed levels anyway.
+                tubeRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                tubeRenderer.receiveShadows = false;
             }
         }
 
@@ -367,13 +403,40 @@ namespace TubityWAI
                 }
             }
 
-            // 2. Spawn rings along the inside of the tube at regular Z coordinates
-            float currentZ = markerInterval;
+            // 2. Spawn rings along the inside of the tube at regular Z coordinates.
+            // Composed levels widen the interval with speed, so the first ring is found from the
+            // absolute Z grid rather than assumed to sit one interval into the segment - an
+            // interval that does not divide segmentLength would otherwise leave uneven seams.
+            LevelConfig markerConfig = (GameManager.Instance != null) ? GameManager.Instance.currentLevelConfig : null;
+            float interval = MarkerSpacing(markerConfig);
+            float segmentZ = transform.position.z;
+
+            // A composed level places its rings itself - one under every arc, plus fillers across
+            // empty stretches - so the positions are read from it rather than stepped off a grid.
+            // The list is held for the rest of Populate, which snaps pickups onto these same rings.
+            if (composedMarkers == null) composedMarkers = new System.Collections.Generic.List<float>();
+            composedMarkers.Clear();
+            bool composedRings = markerConfig != null && markerConfig.HasComposer;
+            if (composedRings) markerConfig.composer.MarkersInRange(segmentZ, segmentZ + length, composedMarkers);
+
+            int markerIndex = 0;
+            float currentZ;
+            if (composedRings)
+            {
+                if (composedMarkers.Count == 0) return;
+                currentZ = composedMarkers[0] - segmentZ;
+            }
+            else
+            {
+                currentZ = Mathf.Ceil((segmentZ + 0.001f) / interval) * interval - segmentZ;
+                if (currentZ <= 0.001f) currentZ = interval;
+            }
+
             while (currentZ < length)
             {
-                float absoluteZ = transform.position.z + currentZ;
+                float absoluteZ = segmentZ + currentZ;
                 Vector3 curveOffset = Vector3.zero;
-                LevelConfig config = (GameManager.Instance != null) ? GameManager.Instance.currentLevelConfig : null;
+                LevelConfig config = markerConfig;
                 if (config != null)
                 {
                     curveOffset = config.GetCurveOffset(absoluteZ);
@@ -419,8 +482,227 @@ namespace TubityWAI
                     AddMarkerHalo(ringObj);
                 }
 
-                currentZ += markerInterval;
+                if (composedRings)
+                {
+                    markerIndex++;
+                    if (markerIndex >= composedMarkers.Count) break;
+                    currentZ = composedMarkers[markerIndex] - segmentZ;
+                }
+                else
+                {
+                    currentZ += interval;
+                }
             }
+        }
+
+        /// <summary>Marker-ring positions inside this segment, absolute Z. Empty on a classic level.</summary>
+        private System.Collections.Generic.List<float> composedMarkers;
+
+        /// <summary>
+        /// Snaps a pickup onto the nearest marker ring, so coins and powerups sit on the same beat
+        /// as the arcs instead of floating between rings. Only this segment's own rings are
+        /// considered - snapping to one in the next segment would place the pickup outside the
+        /// object it is parented to. Returns the input unchanged if there is nothing to snap to.
+        /// </summary>
+        private float SnapToMarker(LevelConfig config, float localZ)
+        {
+            if (config == null || !config.HasComposer) return localZ;
+            if (composedMarkers == null || composedMarkers.Count == 0) return localZ;
+
+            float segmentZ = transform.position.z;
+            float best = localZ;
+            float bestDistance = float.MaxValue;
+
+            for (int i = 0; i < composedMarkers.Count; i++)
+            {
+                float candidate = composedMarkers[i] - segmentZ;
+                if (candidate < 0.5f || candidate > length - 0.5f) continue;
+
+                float distance = Mathf.Abs(candidate - localZ);
+                if (distance < bestDistance) { bestDistance = distance; best = candidate; }
+            }
+            return best;
+        }
+
+        // ---- Keeping pickups off the arcs ---------------------------------------------------------
+        // Pickups snap to marker rings to sit on the beat, and a composed level draws a marker ring
+        // under every arc - so a pickup at a random angle regularly landed inside one. Once a
+        // segment has built both, every pickup is checked against the arcs near it: moved to the
+        // nearest clear angle, or (a powerup) to another ring in the segment, or dropped.
+
+        /// <summary>Half a pickup's footprint around the wall, with a little air, in degrees.</summary>
+        private const float PickupHalfAngleDeg = 8f;
+        /// <summary>Half a pickup's footprint along the tube, with a little air.</summary>
+        private const float PickupHalfDepth = 0.9f;
+
+        private struct ArcBand
+        {
+            public float z, halfDepth, startDeg, spanDeg;
+            public bool moving;     // spins, snaps, swings or chases: sweeps its whole band
+        }
+
+        private readonly System.Collections.Generic.List<ArcBand> arcBands = new System.Collections.Generic.List<ArcBand>();
+        private System.Collections.Generic.List<Progression.RingSpec> bandScratch;
+
+        private void KeepPickupsOffArcs(LevelConfig config)
+        {
+            Collectible[] pickups = GetComponentsInChildren<Collectible>();
+            if (pickups.Length == 0) return;
+
+            GatherArcBands(config);
+            if (arcBands.Count == 0) return;
+
+            float segmentZ = transform.position.z;
+            foreach (Collectible pickup in pickups)
+            {
+                Vector3 p = pickup.transform.localPosition;
+                float absoluteZ = segmentZ + p.z;
+                Vector3 curve = config != null ? config.GetCurveOffset(absoluteZ) : Vector3.zero;
+                Vector2 radial = new Vector2(p.x - curve.x, p.y - curve.y);
+                // Positions are laid out as (sin a, -cos a) * r, the same angle space as the arcs.
+                float angle = Mathf.Atan2(radial.x, -radial.y) * Mathf.Rad2Deg;
+                float r = radial.magnitude;
+
+                if (!ArcBlocks(absoluteZ, angle)) continue;
+
+                float clear;
+                if (NearestClearAngle(absoluteZ, angle, out clear))
+                {
+                    PlacePickup(pickup, p.z, clear, r, config);
+                    continue;
+                }
+
+                // Nothing clear at this depth (a moving ring, a full ring). A powerup is worth
+                // relocating to another ring in the segment; a coin is just one of a trail.
+                if (pickup.type != CollectibleType.Coin)
+                {
+                    float z2, a2;
+                    if (FindClearRing(config, p.z, angle, out z2, out a2))
+                    {
+                        PlacePickup(pickup, z2, a2, r, config);
+                        continue;
+                    }
+                }
+                else if (GameManager.Instance != null)
+                {
+                    GameManager.Instance.UnregisterCoinSpawned();
+                }
+                Destroy(pickup.gameObject);
+            }
+        }
+
+        /// <summary>Every arc that could reach a pickup in this segment - from the composer for a
+        /// composed level (so a neighbouring segment's rings count too), else this segment's own.</summary>
+        private void GatherArcBands(LevelConfig config)
+        {
+            arcBands.Clear();
+            float segmentZ = transform.position.z;
+
+            if (config != null && config.HasComposer)
+            {
+                if (bandScratch == null) bandScratch = new System.Collections.Generic.List<Progression.RingSpec>();
+                config.composer.RingsInRange(segmentZ - 6f, segmentZ + length + 6f, bandScratch);
+                foreach (Progression.RingSpec ring in bandScratch)
+                {
+                    bool moving = ring.motion != RingArcGroup.Motion.Static;
+                    foreach (Progression.ArcSpec arc in ring.arcs)
+                    {
+                        arcBands.Add(new ArcBand { z = ring.z, halfDepth = arc.depth * 0.5f,
+                                                   startDeg = arc.startAngleDeg, spanDeg = arc.arcAngleDeg,
+                                                   moving = moving });
+                    }
+                }
+                return;
+            }
+
+            // Classic spawner: arcs never sit within a few units of a segment edge, so this
+            // segment's own are the only ones in reach.
+            foreach (Obstacle obs in GetComponentsInChildren<Obstacle>())
+            {
+                RingArcGroup group = obs.GetComponentInParent<RingArcGroup>();
+                float start = obs.transform.localEulerAngles.z + (group != null ? group.transform.localEulerAngles.z : 0f);
+                arcBands.Add(new ArcBand { z = obs.transform.position.z, halfDepth = obs.depth * 0.5f,
+                                           startDeg = start, spanDeg = obs.arcAngle,
+                                           moving = group != null && group.motion != RingArcGroup.Motion.Static });
+            }
+        }
+
+        private bool ArcBlocks(float z, float angleDeg)
+        {
+            for (int i = 0; i < arcBands.Count; i++)
+            {
+                ArcBand band = arcBands[i];
+                if (Mathf.Abs(z - band.z) >= band.halfDepth + PickupHalfDepth) continue;
+                if (band.moving) return true;
+                float from = band.startDeg - PickupHalfAngleDeg;
+                if (Mathf.Repeat(angleDeg - from, 360f) <= band.spanDeg + 2f * PickupHalfAngleDeg) return true;
+            }
+            return false;
+        }
+
+        private bool NearestClearAngle(float z, float angleDeg, out float clear)
+        {
+            for (int k = 2; k <= 180; k += 2)
+            {
+                if (!ArcBlocks(z, angleDeg + k)) { clear = angleDeg + k; return true; }
+                if (!ArcBlocks(z, angleDeg - k)) { clear = angleDeg - k; return true; }
+            }
+            clear = angleDeg;
+            return false;
+        }
+
+        /// <summary>The nearest marker ring in this segment with a clear angle, for a powerup whose
+        /// own ring had none.</summary>
+        private bool FindClearRing(LevelConfig config, float localZ, float angleDeg, out float bestZ, out float bestAngle)
+        {
+            bestZ = localZ;
+            bestAngle = angleDeg;
+            float bestDistance = float.MaxValue;
+            float segmentZ = transform.position.z;
+
+            System.Collections.Generic.List<float> candidates = new System.Collections.Generic.List<float>();
+            if (config != null && config.HasComposer && composedMarkers != null)
+            {
+                foreach (float m in composedMarkers) candidates.Add(m - segmentZ);
+            }
+            else
+            {
+                float spacing = MarkerSpacing(config);
+                for (float z = spacing; z < length; z += spacing) candidates.Add(z);
+            }
+
+            foreach (float candidate in candidates)
+            {
+                if (candidate < 0.5f || candidate > length - 0.5f) continue;
+                float distance = Mathf.Abs(candidate - localZ);
+                if (distance >= bestDistance) continue;
+
+                float clear = angleDeg;
+                if (ArcBlocks(segmentZ + candidate, angleDeg) && !NearestClearAngle(segmentZ + candidate, angleDeg, out clear))
+                    continue;
+                bestDistance = distance;
+                bestZ = candidate;
+                bestAngle = clear;
+            }
+            return bestDistance < float.MaxValue;
+        }
+
+        private void PlacePickup(Collectible pickup, float localZ, float angleDeg, float r, LevelConfig config)
+        {
+            Vector3 curve = config != null ? config.GetCurveOffset(transform.position.z + localZ) : Vector3.zero;
+            float a = angleDeg * Mathf.Deg2Rad;
+            pickup.transform.localPosition = new Vector3(Mathf.Sin(a) * r + curve.x, -Mathf.Cos(a) * r + curve.y, localZ);
+
+            // Coins face down the tube, standing on the wall where they now are.
+            if (pickup.type == CollectibleType.Coin)
+                pickup.transform.localRotation = Quaternion.LookRotation(Vector3.forward, pickup.transform.localPosition.normalized);
+        }
+
+        /// <summary>Marker spacing for this level: a composer's own interval, else the classic one.</summary>
+        private float MarkerSpacing(LevelConfig config)
+        {
+            float spacing = (config != null) ? config.MarkerIntervalOr(markerInterval) : markerInterval;
+            return Mathf.Max(1f, spacing);
         }
 
         private void SpawnCoins()
@@ -477,9 +759,15 @@ namespace TubityWAI
                 // Place coins slightly inward from the tube radius so they hover right above the track surface
                 float spawnRadius = radius - 0.35f;
 
+                // The trail starts on a ring so it reads as being on the same beat as the arcs;
+                // the coins keep their own close spacing rather than being spread ring to ring,
+                // which would turn a pickup trail into a scattering.
+                float trailStart = SnapToMarker(config, spacing);
+
                 for (int i = 0; i < count; i++)
                 {
-                    float localZ = spacing * (i + 1);
+                    float localZ = trailStart + spacing * i;
+                    if (localZ >= length) break;
                     float absoluteZ = transform.position.z + localZ;
                     if (absoluteZ > finishZ - 5f) continue;   // nothing past the gate
                     Vector3 curveOffset = Vector3.zero;
@@ -540,7 +828,9 @@ namespace TubityWAI
         private void SpawnSinglePowerup()
         {
             float angle = Random.Range(0f, 2f * Mathf.PI);
-            float localZ = length * 0.5f; // Spawn in the middle of the segment
+            float localZ = SnapToMarker(
+                (GameManager.Instance != null) ? GameManager.Instance.currentLevelConfig : null,
+                length * 0.5f);
             float absoluteZ = transform.position.z + localZ;
             Vector3 curveOffset = Vector3.zero;
             LevelConfig config = (GameManager.Instance != null) ? GameManager.Instance.currentLevelConfig : null;
@@ -588,7 +878,9 @@ namespace TubityWAI
         private void SpawnSingleMagnet()
         {
             float angle = Random.Range(0f, 2f * Mathf.PI);
-            float localZ = length * 0.5f; // Spawn in the middle of the segment
+            float localZ = SnapToMarker(
+                (GameManager.Instance != null) ? GameManager.Instance.currentLevelConfig : null,
+                length * 0.5f);
             float absoluteZ = transform.position.z + localZ;
             Vector3 curveOffset = Vector3.zero;
             LevelConfig config = (GameManager.Instance != null) ? GameManager.Instance.currentLevelConfig : null;
@@ -636,7 +928,9 @@ namespace TubityWAI
         private void SpawnAddSpherePowerup()
         {
             float angle = Random.Range(0f, 2f * Mathf.PI);
-            float localZ = length * 0.5f; // Spawn in the middle of the segment
+            float localZ = SnapToMarker(
+                (GameManager.Instance != null) ? GameManager.Instance.currentLevelConfig : null,
+                length * 0.5f);
             float absoluteZ = transform.position.z + localZ;
             Vector3 curveOffset = Vector3.zero;
             LevelConfig config = (GameManager.Instance != null) ? GameManager.Instance.currentLevelConfig : null;
@@ -698,6 +992,15 @@ namespace TubityWAI
             LevelConfig config = (GameManager.Instance != null) ? GameManager.Instance.currentLevelConfig : null;
             RingDifficulty rings = (config != null && config.rings != null) ? config.rings : RingDifficulty.Classic();
 
+            // Composed levels (Progression Test 1, endless modes) already know exactly which rings
+            // belong where - the composer solved their spacing from what each move costs - so this
+            // segment just builds the ones that fall inside it.
+            if (config != null && config.HasComposer)
+            {
+                SpawnComposedRings(config);
+                return;
+            }
+
             // Keep the run-in clear so the player has time to read the first rings (attraction mode has no config).
             float clearDistance = (config != null) ? config.GetStartClearDistance() : 0f;
 
@@ -721,6 +1024,98 @@ namespace TubityWAI
                 currentZ += markerInterval;
             }
         }
+
+        /// <summary>
+        /// Builds every composed ring whose Z falls inside this segment. Unlike the classic
+        /// spawner nothing is rolled here: arc angles, colours and motion all come straight
+        /// from the RingSpec the composer produced before the level started.
+        /// </summary>
+        private void SpawnComposedRings(LevelConfig config)
+        {
+            if (composedScratch == null) composedScratch = new System.Collections.Generic.List<Progression.RingSpec>();
+
+            float segmentZ = transform.position.z;
+            config.composer.RingsInRange(segmentZ, segmentZ + length, composedScratch);
+            if (composedScratch.Count == 0) return;
+
+            bool canColorCode = transparentObstacleMaterials != null && transparentObstacleMaterials.Length > 0;
+            Material arcHalo = IsNeonBloom(config) ? NeonHaloMaterial() : null;
+            Material arcBorder = ArcBorderMaterial();
+
+            for (int r = 0; r < composedScratch.Count; r++)
+            {
+                Progression.RingSpec spec = composedScratch[r];
+                float localZ = spec.z - segmentZ;
+                Vector3 curveOffset = config.GetCurveOffset(spec.z);
+
+                GameObject groupObj = new GameObject("ObstacleRing");
+                groupObj.transform.SetParent(this.transform, false);
+                groupObj.transform.localPosition = new Vector3(curveOffset.x, curveOffset.y, localZ);
+                groupObj.transform.localRotation = Quaternion.identity;
+
+                for (int a = 0; a < spec.arcs.Length; a++)
+                {
+                    Progression.ArcSpec arc = spec.arcs[a];
+
+                    GameObject obsObj = new GameObject("Obstacle");
+                    obsObj.transform.SetParent(groupObj.transform, false);
+                    obsObj.transform.localRotation = Quaternion.Euler(0f, 0f, arc.startAngleDeg);
+
+                    Obstacle obs = obsObj.AddComponent<Obstacle>();
+                    obs.radius = radius;
+                    obs.thickness = arc.thickness;
+                    obs.depth = arc.depth;
+                    obs.arcAngle = arc.arcAngleDeg;
+                    obs.haloMaterial = arcHalo;
+                    // Outline every arc, and alternate the body colour of the solid ones, so a run
+                    // of rings reads as separate objects receding rather than one flat wash.
+                    obs.borderMaterial = arcBorder;
+                    // Wide arcs need proportionally more segments or they read as polygons and
+                    // their compound triggers get coarse enough to let a sphere slip through.
+                    obs.radialSegments = Mathf.Clamp(Mathf.CeilToInt(arc.arcAngleDeg / 10f), 6, 48);
+
+                    bool colour = arc.isColourCoded && canColorCode;
+                    if (colour)
+                    {
+                        int idx = Mathf.Clamp(arc.colourIndex, 0, transparentObstacleMaterials.Length - 1);
+                        obs.isColorCoded = true;
+                        obs.targetColorIndex = idx;
+                        obs.obstacleMaterial = transparentObstacleMaterials[idx];
+                        if (GameManager.Instance != null) GameManager.Instance.RegisterShieldSpawned();
+
+                        if (arc.colourShift && transparentObstacleMaterials.Length > 1)
+                        {
+                            obs.colorShiftMaterials = transparentObstacleMaterials;
+                            obs.colorShiftInterval = Mathf.Max(0.3f, arc.colourShiftInterval);
+                            obs.colorShiftSeed = arc.colourShiftSeed;
+                        }
+                    }
+                    else
+                    {
+                        obs.isColorCoded = false;
+                        obs.targetColorIndex = -1;
+                        obs.obstacleMaterial = obstacleMaterial;
+                        obs.tintColor = spec.solidTint;
+                    }
+                }
+
+                RingArcGroup group = groupObj.AddComponent<RingArcGroup>();
+                group.motion = spec.motion;
+                group.spinDegPerSec = spec.spinDegPerSec;
+                group.snapInterval = Mathf.Max(0.4f, spec.snapInterval);
+                group.snapAngle = spec.snapAngle;
+                group.snapTweenDuration = Mathf.Clamp(spec.snapTurnDuration, 0.05f, 1f);
+                group.telegraphWindow = Mathf.Clamp(spec.telegraphWindow, 0f, group.snapInterval * 0.8f);
+                group.oscillateAmplitudeDeg = spec.oscAmplitudeDeg;
+                group.oscillatePeriod = Mathf.Max(0.3f, spec.oscPeriod);
+                group.oscillatePhase = spec.oscPhase;
+                group.chaseDegPerSec = spec.chaseDegPerSec;
+                group.chaseOffsetDeg = spec.chaseOffsetDeg;
+                group.chaseEngageDistance = spec.chaseEngageDistance;
+            }
+        }
+
+        private System.Collections.Generic.List<Progression.RingSpec> composedScratch;
 
         /// <summary>
         /// Spawns one "ring arc group": 1..N toroid arcs sharing a marker ring, parented to a

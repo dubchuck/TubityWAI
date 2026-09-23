@@ -21,6 +21,10 @@ namespace TubityWAI
         [Tooltip("Also build one segment behind z = 0 so the camera, which trails the player, starts inside the tube.")]
         public bool spawnSegmentBehindStart = true;
 
+        [Tooltip("Extra tube to build behind z = 0, for a run that is entered in flight (the level-to-level " +
+                 "hand-off approaches the start line from behind). The pool grows by the same amount.")]
+        public float extraDistanceBehind = 0f;
+
         [Header("Materials")]
         public Material tunnelMaterial;
         public Material markerMaterial;
@@ -45,10 +49,24 @@ namespace TubityWAI
                 target = FindFirstObjectByType<PlayerController>();
             }
 
+            // A checkpoint resume starts the tube where the player is, not at the level's origin.
+            LevelConfig startConfig = (GameManager.Instance != null) ? GameManager.Instance.currentLevelConfig : null;
+            if (startConfig != null && startConfig.startZ > 0f)
+            {
+                nextSpawnZ = Mathf.Floor(startConfig.startZ / segmentLength) * segmentLength;
+            }
+
             // Start one segment early so the trailing camera never looks at the tube's open end.
             if (spawnSegmentBehindStart)
             {
-                nextSpawnZ = -segmentLength;
+                nextSpawnZ -= segmentLength;
+            }
+
+            if (extraDistanceBehind > 0f)
+            {
+                int extra = Mathf.CeilToInt(extraDistanceBehind / segmentLength);
+                nextSpawnZ -= extra * segmentLength;
+                activeSegmentsCount += extra;
             }
 
             // Generate initial set of tunnel segments

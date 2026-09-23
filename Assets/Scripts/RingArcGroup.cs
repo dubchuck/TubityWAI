@@ -9,7 +9,7 @@ namespace TubityWAI
     /// </summary>
     public class RingArcGroup : MonoBehaviour
     {
-        public enum Motion { Static, Spin, Snap, Oscillate }
+        public enum Motion { Static, Spin, Snap, Oscillate, Chase }
 
         public Motion motion = Motion.Static;
 
@@ -30,6 +30,16 @@ namespace TubityWAI
         public float telegraphWindow = 0.7f;
         [Tooltip("Uniform radial scale of the group at the moment of the snap (1 = no swell).")]
         public float telegraphSwell = 1.05f;
+
+        [Header("Chase")]
+        [Tooltip("How fast the ring turns to put an arc in front of the player, in degrees per second. " +
+                 "Deliberately slower than the player can steer, so committing early still wins.")]
+        public float chaseDegPerSec = 55f;
+        [Tooltip("Angle from this ring's zero that is aimed at the player. Set by the spawner to the " +
+                 "centre of the widest arc, so the ring closes the gap the player is currently using.")]
+        public float chaseOffsetDeg = 0f;
+        [Tooltip("Distance ahead of the ring at which it wakes up and starts tracking.")]
+        public float chaseEngageDistance = 90f;
 
         [Header("Oscillate")]
         public float oscillateAmplitudeDeg = 45f;
@@ -111,9 +121,36 @@ namespace TubityWAI
                     float w = 2f * Mathf.PI / Mathf.Max(0.05f, oscillatePeriod);
                     angle = baseAngle + Mathf.Sin(timer * w + phase) * oscillateAmplitudeDeg;
                     break;
+
+                case Motion.Chase:
+                    UpdateChase(dt);
+                    break;
             }
 
             transform.localRotation = Quaternion.Euler(0f, 0f, angle);
+        }
+
+        /// <summary>
+        /// Turns to put an arc where the player is standing, so holding a line stops being an
+        /// answer and the gap has to be re-won on approach. The turn rate is capped below the
+        /// player's own steering speed, which keeps it a pressure rather than an execution.
+        /// It only wakes within chaseEngageDistance so distant rings do not thrash.
+        /// </summary>
+        private void UpdateChase(float dt)
+        {
+            PlayerController player = PlayerController.Instance;
+            if (player == null) return;
+
+            float distance = transform.position.z - player.zPos;
+            if (distance > chaseEngageDistance || distance < -5f) return;
+
+            // Ease in over the first third of the approach so the ring does not snap awake.
+            float engage = Mathf.Clamp01(1f - distance / Mathf.Max(1f, chaseEngageDistance));
+            float rate = chaseDegPerSec * Mathf.SmoothStep(0f, 1f, engage);
+
+            float target = player.currentAngle * Mathf.Rad2Deg - chaseOffsetDeg;
+            float delta = Mathf.DeltaAngle(angle, target);
+            angle += Mathf.Clamp(delta, -rate * dt, rate * dt);
         }
 
         /// <summary>

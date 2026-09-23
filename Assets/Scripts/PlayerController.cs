@@ -108,6 +108,9 @@ namespace TubityWAI
         public bool IsJumping => isJumping;
         public bool HasCrossedOver => hasCrossedOver;
 
+        // The tutorial's jump-only steps: steering input is ignored, jumping still works.
+        public bool SteeringLocked { get; set; } = false;
+
         // The current Z position along the tube.
         [HideInInspector]
         public float zPos = 0f;
@@ -126,9 +129,21 @@ namespace TubityWAI
         private bool isRecovering = false;
         private float recoveryTimer = 0f;
 
-        // Finish-line hero shot: once true, Update() hands sphere transforms over
-        // entirely to PlayFinishBurst() so the two don't fight over localScale/position.
-        private bool isFinishing = false;
+        // Entering a run in flight (see BeginApproach): the sphere starts behind the start line
+        // at the previous level's speed and decelerates onto it, then the countdown begins.
+        private bool approachPending = false;
+        private float approachFromZ = 0f;
+        private float approachToZ = 0f;
+        private float approachDuration = 1.6f;
+        private float approachTimer = -1f;
+        private bool approachFromRest = false;
+        private int approachCarriedSpheres = int.MaxValue;
+
+        /// <summary>How many spheres the player is flying with right now.</summary>
+        public int SphereCount => childSpheres.Count;
+
+        /// <summary>Flying in to the start line from the previous level; the countdown follows.</summary>
+        public bool IsApproaching => approachTimer >= 0f;
 
         private class SphereInfo
         {
@@ -146,10 +161,9 @@ namespace TubityWAI
 
         private void Awake()
         {
-            if (Instance == null)
-            {
-                Instance = this;
-            }
+            // The newest player wins: during the level-to-level hand-off the previous run's player
+            // is still alive for a frame, and everything that asks for Instance means the new one.
+            Instance = this;
         }
 
         private void OnDestroy()
@@ -163,6 +177,23 @@ namespace TubityWAI
         private void Start()
         {
             zPos = transform.position.z;
+
+            // Resuming from a checkpoint, and matching the level's own marker spacing so the
+            // sphere's pulse stays locked to the rings it is actually flying through.
+            LevelConfig zConfig = (GameManager.Instance != null) ? GameManager.Instance.currentLevelConfig : null;
+            if (zConfig != null)
+            {
+                if (zConfig.startZ > 0f) zPos = zConfig.startZ;
+                markerInterval = zConfig.MarkerIntervalOr(markerInterval);
+            }
+
+            if (approachPending)
+            {
+                approachPending = false;
+                zPos = approachFromZ;
+                approachTimer = 0f;
+            }
+
             lastZ = zPos;
             Score = 0;
             Coins = 0;
@@ -178,7 +209,7 @@ namespace TubityWAI
             LevelConfig startConfig = (GameManager.Instance != null) ? GameManager.Instance.currentLevelConfig : null;
             bool isTutorial = startConfig != null && (startConfig.levelNumber == 99 ||
                               (startConfig.levelName != null && startConfig.levelName.ToUpper().Contains("HOW TO PLAY")));
-            if (startConfig != null && !isTutorial)
+            if (startConfig != null && !isTutorial && !IsApproaching)
             {
                 IsCountingDown = true;
                 CountdownRemaining = COUNTDOWN_DURATION;
@@ -213,6 +244,17 @@ namespace TubityWAI
             }
             
             RecalculateSphereOffsets(true);
+
+            // New spheres on a run entered in flight grow out of the first one; Update's
+            // offset and scale easing carries them round to their places.
+            if (IsApproaching)
+            {
+                for (int i = approachCarriedSpheres; i < childSpheres.Count; i++)
+                {
+                    childSpheres[i].currentAngleOffset = 0f;
+                    childSpheres[i].scaleMultiplier = 0f;
+                }
+            }
             
             // Setup Speed Lines Particle System
             GameObject speedLinesObj = new GameObject("SpeedLines");
@@ -327,6 +369,42 @@ namespace TubityWAI
             }
         }
 
+        /// <summary>
+        /// The Add-Sphere pickup: wins back a sphere lost to a hit, up to the number the level is
+        /// laid out for. At full strength it is worth points instead, so it can never push the
+        /// player past what the rings were built to let through.
+        /// </summary>
+        public void RestoreSphere()
+        {
+            LevelConfig config = GameManager.Instance != null ? GameManager.Instance.currentLevelConfig : null;
+            int cap = (config != null && config.forcedSphereCount > 0) ? config.forcedSphereCount : 5;
+            if (childSpheres.Count >= cap)
+            {
+                AddScore(10);
+                PlaySound(ProceduralAudio.GetAcceptSound());
+                return;
+            }
+
+            AddSphere();
+            GameHUD hud = FindFirstObjectByType<GameHUD>();
+            if (hud != null) hud.ShowToast(childSpheres.Count == 2 ? "TWIN BACK" : "SPHERE BACK");
+        }
+
+        private int FreeColourIndex()
+        {
+            for (int colour = 0; colour < 5; colour++)
+            {
+                bool taken = false;
+                foreach (SphereInfo info in childSpheres)
+                {
+                    PlayerSphere existing = info.transform != null ? info.transform.GetComponent<PlayerSphere>() : null;
+                    if (existing != null && existing.colorIndex == colour) { taken = true; break; }
+                }
+                if (!taken) return colour;
+            }
+            return childSpheres.Count % 5;
+        }
+
         public void AddSphere()
         {
             if (childSpheres.Count == 0) return;
@@ -341,7 +419,9 @@ namespace TubityWAI
             PlayerSphere ps = newSphereObj.GetComponent<PlayerSphere>();
             if (ps != null)
             {
-                ps.colorIndex = childSpheres.Count % 5; // cycle through colors if needed
+                // The lowest colour nobody is wearing, so a sphere won back after a hit comes back
+                // in the colour that was lost - not a copy of the survivor's.
+                ps.colorIndex = FreeColourIndex();
             }
 
             Renderer r = newSphereObj.GetComponent<Renderer>();
@@ -409,7 +489,12 @@ namespace TubityWAI
                     }
                     
                     PlaySound(ProceduralAudio.GetCrashSound());
-                    
+
+                    // The hit cost a sphere, not the run - and the result will remember it.
+                    if (GameManager.Instance != null) GameManager.Instance.RegisterSphereLost();
+                    GameHUD hud = FindFirstObjectByType<GameHUD>();
+                    if (hud != null) hud.ShowToast(childSpheres.Count == 1 ? "TWIN LOST" : "SPHERE LOST");
+
                     // Rebalance the remaining spheres
                     RecalculateSphereOffsets(false);
                     return;
@@ -500,91 +585,31 @@ namespace TubityWAI
         }
 
         /// <summary>
-        /// End-of-level hero shot: collapses the formation to the center with a
-        /// squash (anticipation), then rockets every sphere forward while it grows
-        /// far past normal size, spinning and flaring brighter as it recedes down
-        /// the tube. Runs on unscaled time so it still plays through the pause the
-        /// caller applies for the review card. Update() bows out for its duration
-        /// (see isFinishing) so nothing overwrites these transforms mid-flight.
+        /// Enters this run in flight rather than parked on its start: the sphere begins at `fromZ`
+        /// holding `angle` and arrives on `toZ` (the start line, or a banked checkpoint) after
+        /// `duration`, and only then counts down. Arriving from a finished level it is already
+        /// moving and decelerates evenly; `fromRest` (after a crash) speeds up and then slows.
+        /// Steering and jumping stay live throughout. Call before Start, straight after the run
+        /// is built.
         /// </summary>
-        public System.Collections.IEnumerator PlayFinishBurst()
+        /// <remarks>`carriedSpheres` is how many spheres the previous run had. Any beyond that
+        /// (the first two-sphere level) start at nothing on the first sphere and split off to
+        /// their places, rather than popping into existence.</remarks>
+        public void BeginApproach(float fromZ, float toZ, float duration, float angle, bool fromRest,
+                                  int carriedSpheres = int.MaxValue)
         {
-            isFinishing = true;
-
-            if (speedLinesPS != null)
-            {
-                var em = speedLinesPS.emission;
-                em.rateOverTime = 0f;
-            }
-
-            int count = childSpheres.Count;
-            Vector3[] startLocalPos = new Vector3[count];
-            Vector3[] startScale = new Vector3[count];
-            for (int i = 0; i < count; i++)
-            {
-                startLocalPos[i] = childSpheres[i].transform.localPosition;
-                startScale[i] = childSpheres[i].transform.localScale;
-            }
-
-            // Phase 1: collapse to the center, squashing flat sideways - a coiled anticipation beat.
-            const float collapseDuration = 0.18f;
-            float elapsed = 0f;
-            while (elapsed < collapseDuration)
-            {
-                elapsed += Time.unscaledDeltaTime;
-                float smoothT = Mathf.Clamp01(elapsed / collapseDuration);
-                smoothT = smoothT * smoothT * (3f - 2f * smoothT);
-
-                for (int i = 0; i < count; i++)
-                {
-                    Transform t = childSpheres[i].transform;
-                    t.localPosition = Vector3.Lerp(startLocalPos[i], Vector3.zero, smoothT);
-                    Vector3 s = startScale[i];
-                    t.localScale = new Vector3(s.x * (1f + smoothT * 0.4f), s.y * (1f - smoothT * 0.55f), s.z * (1f + smoothT * 0.4f));
-                }
-                yield return null;
-            }
-
-            // Phase 2: erupt - scale rockets up (relative to the squashed pose above) while
-            // spinning and rushing forward down the tube, brightening like a small nova.
-            const float expandDuration = 0.75f;
-            const float finalScaleMult = 55f;
-            Vector3[] phase2Scale = new Vector3[count];
-            for (int i = 0; i < count; i++) phase2Scale[i] = childSpheres[i].transform.localScale;
-
-            elapsed = 0f;
-            while (elapsed < expandDuration)
-            {
-                float dt = Time.unscaledDeltaTime;
-                elapsed += dt;
-                float t = Mathf.Clamp01(elapsed / expandDuration);
-                float growT = t * t * t; // slow start, rockets by the end
-                float scaleMult = Mathf.Lerp(1f, finalScaleMult, growT);
-
-                for (int i = 0; i < count; i++)
-                {
-                    SphereInfo sphere = childSpheres[i];
-                    Transform st = sphere.transform;
-                    st.localScale = phase2Scale[i] * scaleMult;
-                    st.localPosition += Vector3.forward * (18f * t) * dt;
-                    st.Rotate(new Vector3(0f, 260f, 140f) * dt, Space.Self);
-
-                    if (sphere.material != null && sphere.material.HasProperty("_EmissionColor"))
-                    {
-                        sphere.material.SetColor("_EmissionColor", sphere.baseEmissionColor * Mathf.Lerp(1f, 6f, t));
-                    }
-                }
-                yield return null;
-            }
-
-            if (speedLinesPS != null) speedLinesPS.Stop();
+            approachPending = true;
+            approachCarriedSpheres = Mathf.Max(1, carriedSpheres);
+            approachFromZ = Mathf.Min(fromZ, toZ);
+            approachToZ = toZ;
+            approachDuration = Mathf.Max(0.1f, duration);
+            approachFromRest = fromRest;
+            currentAngle = angle;
+            zPos = approachFromZ;
         }
 
         private void Update()
         {
-            // Handed off to the finish-line burst coroutine - stop touching sphere transforms.
-            if (isFinishing) return;
-
             // Handle shortcut keys to set sphere count (1-5)
             if (UnityEngine.InputSystem.Keyboard.current != null)
             {
@@ -660,6 +685,20 @@ namespace TubityWAI
 
             // 2. Process mobile touch & editor mouse inputs
             ProcessTouchAndMouseInputs(ref steerInput, ref spacePressed);
+            if (SteeringLocked) steerInput = 0f;
+
+            // Past the finish gate the run is over: the sphere holds its line and the tube keeps
+            // streaming by, clear of obstacles, while the review card waits for the player. The
+            // moment the card is dismissed the controls come back, ahead of the next level.
+            bool levelDone = GameManager.Instance != null && GameManager.Instance.IsLevelComplete;
+            bool inputLocked = levelDone && !GameManager.Instance.IsTransitioning;
+            if (inputLocked)
+            {
+                steerInput = 0f;
+                spacePressed = false;
+                isDownPressed = false;
+                menuPressed = false;
+            }
 
             // 3. Handle Menu / Pause Toggle
             if (menuPressed && GameManager.Instance != null && !GameManager.Instance.IsGameOver)
@@ -693,6 +732,20 @@ namespace TubityWAI
 
 
             // 3. Apply steering (independent in-air and on-ground steering)
+            // World 11: a banked tube drags the player toward the outside of the turn. Curves were
+            // purely cosmetic before this - the whole world, player included, was translated by the
+            // same offset - so this is what finally gives curvature a cost to hold against.
+            if (!IsCountingDown && !isJumping && !levelDone)
+            {
+                LevelConfig driftConfig = (GameManager.Instance != null) ? GameManager.Instance.currentLevelConfig : null;
+                float outwardAngle, driftMag;
+                if (driftConfig != null && driftConfig.GetDrift(zPos, out outwardAngle, out driftMag))
+                {
+                    float toward = Mathf.DeltaAngle(currentAngle * Mathf.Rad2Deg, outwardAngle * Mathf.Rad2Deg) * Mathf.Deg2Rad;
+                    currentAngle += Mathf.Sign(toward) * driftConfig.driftStrength * driftMag * Time.deltaTime;
+                }
+            }
+
             float steerAmount = steerInput * angularSpeed * Time.deltaTime;
             if (isJumping)
             {
@@ -709,7 +762,7 @@ namespace TubityWAI
             if (currentAngle > Mathf.PI * 2f) currentAngle -= Mathf.PI * 2f;
 
             // Update forward movement and time elapsed (the clock only runs once the countdown is over)
-            if (!IsCountingDown) TimeElapsed += Time.deltaTime;
+            if (!IsCountingDown && !IsApproaching) TimeElapsed += Time.deltaTime;
             
             // Powerup state machine
             float currentInvincibilityBoost = 1f;
@@ -758,8 +811,28 @@ namespace TubityWAI
                 em.rateOverTime = 200f * InvincibilityEffectStrength;
             }
 
-            float activeSpeed = IsCountingDown ? 0f : forwardSpeed * (isDownPressed ? speedBoostMultiplier : 1f) * currentInvincibilityBoost;
-            zPos += activeSpeed * Time.deltaTime;
+            if (IsApproaching)
+            {
+                // In flight: constant deceleration, which leaves at the speed the caller chose the
+                // distance for. From rest: ease in and out. Either way it lands exactly on toZ.
+                approachTimer += Time.deltaTime;
+                float u = Mathf.Clamp01(approachTimer / approachDuration);
+                float travelled = approachFromRest ? Mathf.SmoothStep(0f, 1f, u) : 1f - (1f - u) * (1f - u);
+                zPos = Mathf.Lerp(approachFromZ, approachToZ, travelled);
+                if (u >= 1f)
+                {
+                    approachTimer = -1f;
+                    zPos = approachToZ;
+                    IsCountingDown = true;
+                    CountdownRemaining = COUNTDOWN_DURATION;
+                    lastCountdownTick = -1;
+                }
+            }
+            else
+            {
+                float activeSpeed = IsCountingDown ? 0f : forwardSpeed * (isDownPressed ? speedBoostMultiplier : 1f) * currentInvincibilityBoost;
+                zPos += activeSpeed * Time.deltaTime;
+            }
 
             // Get the curve offset at the current zPos
             Vector3 curveOffset = Vector3.zero;
@@ -775,6 +848,19 @@ namespace TubityWAI
                 && GameManager.Instance != null && !GameManager.Instance.IsLevelComplete)
             {
                 GameManager.Instance.LevelComplete();
+            }
+
+            // Crossing a checkpoint banks progress. The reached point is written straight onto the
+            // config, which is the object the replay path reuses, so a crash resumes from here
+            // instead of throwing away two minutes of a long level.
+            if (config != null && config.HasCheckpoints && !levelDone)
+            {
+                float reached = config.CheckpointAt(zPos);
+                if (reached > config.startZ)
+                {
+                    config.startZ = reached;
+                    if (GameManager.Instance != null) GameManager.Instance.NotifyCheckpoint();
+                }
             }
 
             // Update Volumetric Light Position ahead of the player relative to curve
@@ -877,8 +963,16 @@ namespace TubityWAI
                 }
             }
 
-            // 5. Detect marker crossings (triggers secondary pulse animation & increments score)
-            if (Mathf.Floor(lastZ / markerInterval) != Mathf.Floor(zPos / markerInterval))
+            // 5. Detect marker crossings (triggers secondary pulse animation & increments score).
+            // Composed levels place their rings irregularly - one under every arc - so the pulse
+            // asks the composer what was actually crossed rather than assuming a fixed spacing,
+            // which would drift out of step with the rings the player can see.
+            LevelConfig pulseConfig = (GameManager.Instance != null) ? GameManager.Instance.currentLevelConfig : null;
+            bool crossedMarker = (pulseConfig != null && pulseConfig.HasComposer)
+                ? pulseConfig.composer.CrossedMarker(lastZ, zPos)
+                : Mathf.Floor(lastZ / markerInterval) != Mathf.Floor(zPos / markerInterval);
+
+            if (crossedMarker)
             {
                 // Only (re)start the pulse if the last one already finished. At high forward
                 // speed (see LevelProgression's top-end ~36 units/sec) markers can be crossed
@@ -886,7 +980,8 @@ namespace TubityWAI
                 // restarting the sine ramp from 0 mid-flight - a rapid, visible scale sawtooth
                 // on the player sphere that read as it jittering forward and backward.
                 if (animationTimer < 0f) animationTimer = 0f;
-                Score++; // Increment player score
+                // Nothing scores past the gate (the result is banked) or before the start line.
+                if (!levelDone && !IsApproaching) Score++;
             }
             lastZ = zPos;
 

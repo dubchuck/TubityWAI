@@ -12,18 +12,22 @@ namespace TubityWAI
     /// Props are assembled from ProceduralMeshes (rocks, trunks, crystals,
     /// leaves, domes, discs) dressed in ProceduralTextures (albedo + normal +
     /// emission maps). Meshes, textures and URP Lit materials are all cached
-    /// and shared, colliders are never added and shadows are off.
+    /// and shared, and colliders are never added. Every prop receives the main
+    /// light's shadow; only the big grounded silhouettes cast one (see CastShadows).
     /// </summary>
     public static class EnvironmentScenery
     {
         private const string ContainerName = "EnvironmentScenery";
-        private const float TubeGap = 2.5f;   // clearance between tube wall and the nearest prop
+        private const float TubeGap = 2.5f;        // clearance between tube wall and the nearest prop
+        private const float MaxOrbitSpeed = 5f;    // world units/sec a prop may travel along its orbit
 
         public enum Placement { Grounded, Floating }
 
         public class Prop
         {
             public GameObject root;
+            public EnvironmentTheme theme;     // which theme built it, so a blend can fade it in and out
+            public float dissolveKey;          // 0..1; the prop shows once its theme's weight passes this
             public Placement placement = Placement.Grounded;
             public float minScale = 1f;
             public float maxScale = 1f;
@@ -32,6 +36,7 @@ namespace TubityWAI
             public float spread = 14f;         // random extra distance range
             public bool lowerHalfBias = false; // favour the lower half of the tube (grounded things)
             public bool upright = false;       // floating prop keeps its local up (jellyfish)
+            public float orbitSpeed = 0f;      // degrees/sec around the tube axis, before the distance clamp
             public SceneryDrift drift;
         }
 
@@ -45,30 +50,68 @@ namespace TubityWAI
         // ------------------------------------------------------------------
         // Entry point (called from TunnelSegment on Start and ResetSegment)
         // ------------------------------------------------------------------
+        private static readonly List<EnvironmentTheme> activeThemes = new List<EnvironmentTheme>();
+
         public static void Decorate(GameObject segment, float segmentLength, float tubeRadius, LevelConfig config)
         {
-            if (config == null) return;
-            EnvironmentPalette palette = EnvironmentPalettes.Get(config.environment);
-            if (palette == null) return;
+            if (config == null || !config.HasThemedEnvironment) return;
 
             float segmentZ = segment.transform.position.z;
+            // Sample the blend at the middle of the segment so its props match the stretch of tube they line.
+            float sampleZ = segmentZ + segmentLength * 0.5f;
 
-            Random.State prevState = Random.state;
-            Random.InitState((int)(segmentZ * 31f) + (int)palette.theme * 977);
+            activeThemes.Clear();
+            if (config.HasEnvironmentBlend) config.environmentBlend.ActiveThemes(sampleZ, activeThemes);
+            else activeThemes.Add(config.environment);
+            if (activeThemes.Count == 0) return;
 
             Transform existing = segment.transform.Find(ContainerName);
             EnvironmentSceneryContainer container = existing != null ? existing.GetComponent<EnvironmentSceneryContainer>() : null;
-            if (container == null || container.props.Count == 0)
+            if (container == null)
             {
                 if (existing != null) Object.Destroy(existing.gameObject);
                 GameObject containerObj = new GameObject(ContainerName);
                 containerObj.transform.SetParent(segment.transform, false);
                 container = containerObj.AddComponent<EnvironmentSceneryContainer>();
-                BuildProps(palette.theme, containerObj.transform, container.props);
             }
 
-            foreach (Prop prop in container.props)
+            Random.State prevState = Random.state;
+
+            // A recycled segment may now sit under a different part of the blend, so build any theme's
+            // props the first time this segment needs them and keep them for the next time round.
+            for (int i = 0; i < activeThemes.Count; i++)
             {
+                EnvironmentTheme theme = activeThemes[i];
+                if (EnvironmentPalettes.Get(theme) == null) continue;   // None has no trackside props
+                if (container.builtThemes.Contains(theme)) continue;
+
+                Random.InitState((int)(segmentZ * 31f) + (int)theme * 977);
+                container.builtThemes.Add(theme);
+
+                int first = container.props.Count;
+                BuildProps(theme, container.transform, container.props);
+                for (int k = first; k < container.props.Count; k++)
+                {
+                    container.props[k].theme = theme;
+                    container.props[k].dissolveKey = Random.value;
+                }
+            }
+
+            Random.InitState((int)(segmentZ * 31f) + (int)activeThemes[0] * 977);
+
+            for (int i = 0; i < container.props.Count; i++)
+            {
+                Prop prop = container.props[i];
+                float weight = config.HasEnvironmentBlend
+                    ? config.environmentBlend.Weight(prop.theme, sampleZ)
+                    : (prop.theme == config.environment ? 1f : 0f);
+
+                // Dissolve rather than swap: each prop has its own threshold, so the old theme's props
+                // thin out while the new theme's fill in instead of a whole segment changing at once.
+                bool visible = weight >= 1f || prop.dissolveKey < weight;
+                if (prop.root.activeSelf != visible) prop.root.SetActive(visible);
+                if (!visible) continue;
+
                 Place(prop, segmentLength, tubeRadius, config, segmentZ);
             }
 
@@ -86,18 +129,24 @@ namespace TubityWAI
 
             float scale = Random.Range(prop.minScale, prop.maxScale);
             float dist;
+            float safeRadius;
+            Quaternion local;   // the part of the rotation that survives an orbit
             Quaternion rot;
 
             if (prop.placement == Placement.Grounded)
             {
                 // Base sits outside the tube, the prop grows radially outward (local +Y).
                 dist = tubeRadius + TubeGap + Random.Range(0f, prop.spread);
-                rot = Quaternion.LookRotation(Vector3.forward, radial) * Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+                safeRadius = tubeRadius + TubeGap;
+                local = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+                rot = Quaternion.LookRotation(Vector3.forward, radial) * local;
             }
             else
             {
                 dist = tubeRadius + TubeGap + prop.bodyRadius * scale + prop.extraDistance + Random.Range(0f, prop.spread);
-                rot = prop.upright ? Quaternion.Euler(0f, Random.Range(0f, 360f), 0f) : Random.rotation;
+                safeRadius = tubeRadius + TubeGap * 0.6f + prop.bodyRadius * scale;
+                local = prop.upright ? Quaternion.Euler(0f, Random.Range(0f, 360f), 0f) : Random.rotation;
+                rot = local;
             }
 
             Transform t = prop.root.transform;
@@ -105,7 +154,14 @@ namespace TubityWAI
             t.localRotation = rot;
             t.localScale = Vector3.one * scale;
 
-            if (prop.drift != null) prop.drift.Rebase();
+            if (prop.drift != null)
+            {
+                // Far-out props would streak sideways at a fixed angular rate, so cap
+                // how fast any prop may travel along its orbit.
+                float maxDegrees = MaxOrbitSpeed * Mathf.Rad2Deg / Mathf.Max(dist, 1f);
+                prop.drift.orbitSpeed = Mathf.Clamp(prop.orbitSpeed, -maxDegrees, maxDegrees);
+                prop.drift.Configure(new Vector2(curve.x, curve.y), angle, dist, localZ, safeRadius, local);
+            }
         }
 
         // ------------------------------------------------------------------
@@ -120,6 +176,8 @@ namespace TubityWAI
                 case EnvironmentTheme.Underwater: BuildUnderwater(parent, props); break;
                 case EnvironmentTheme.Volcano:    BuildVolcano(parent, props); break;
                 case EnvironmentTheme.Crystal:    BuildCrystal(parent, props); break;
+                case EnvironmentTheme.SolarSystem:  BuildSolarSystem(parent, props); break;
+                case EnvironmentTheme.AsteroidBelt: BuildAsteroidBelt(parent, props); break;
             }
         }
 
@@ -137,9 +195,9 @@ namespace TubityWAI
         private static void BuildSpace(Transform parent, List<Prop> props)
         {
             ProceduralTextures.TexSet rockTex = ProceduralTextures.Rock(1, new Color(0.10f, 0.09f, 0.09f), new Color(0.36f, 0.31f, 0.28f), 3f);
-            Material rock = Mat("space_rock", Color.white, 0f, 0.2f, 0f, false, 1f, rockTex, 1.5f);
+            Material rock = Mat("space_rock", Color.white, 0f, 0.2f, 0f, false, 1f, rockTex, 1.5f, 1.9f);
             Material hull = Mat("space_hull", new Color(0.62f, 0.66f, 0.72f), 0f, 0.65f, 0.8f, false, 1f,
-                                ProceduralTextures.Rock(2, new Color(0.55f, 0.58f, 0.62f), new Color(0.75f, 0.78f, 0.82f), 1f), 2f);
+                                ProceduralTextures.Rock(2, new Color(0.55f, 0.58f, 0.62f), new Color(0.75f, 0.78f, 0.82f), 1f), 2f, 1.4f);
             Material panel = Mat("space_panel", Color.white, 1.4f, 0.85f, 0.4f, false, 1f,
                                  ProceduralTextures.SolarGrid(1, new Color(0.08f, 0.18f, 0.55f), new Color(0.35f, 0.75f, 1f)), 2f);
             Material dish = Mat("space_dish", new Color(0.85f, 0.87f, 0.9f), 0f, 0.5f, 0.6f);
@@ -154,8 +212,9 @@ namespace TubityWAI
                     Vector3 s = new Vector3(Random.Range(0.7f, 1.6f), Random.Range(0.6f, 1.2f), Random.Range(0.7f, 1.5f));
                     MeshObj(m, p.root.transform, Random.insideUnitSphere * 0.6f, s, rock, Random.rotation);
                 }
-                p.drift = Drift(p.root, new Vector3(Random.Range(-8f, 8f), Random.Range(-8f, 8f), 0f), 0f, 0f);
+                p.drift = Drift(p.root, new Vector3(Random.Range(-25f, 25f), Random.Range(-25f, 25f), 0f), 0f, 0f);
                 p.spread = 26f;
+                CastShadows(p);
                 props.Add(p);
             }
 
@@ -191,8 +250,9 @@ namespace TubityWAI
                 Prim(PrimitiveType.Cube, p.root.transform, new Vector3(2.0f, 0f, 0f), new Vector3(2.4f, 0.06f, 1.0f), panel, Quaternion.identity);
                 Prim(PrimitiveType.Cube, p.root.transform, new Vector3(-2.0f, 0f, 0f), new Vector3(2.4f, 0.06f, 1.0f), panel, Quaternion.identity);
                 MeshObj(ProceduralMeshes.Dome(12, 5, 0.35f, 0f), p.root.transform, new Vector3(0f, 0.75f, 0.3f), Vector3.one * 0.6f, dish, Quaternion.Euler(-40f, 0f, 0f));
-                p.drift = Drift(p.root, new Vector3(0f, 6f, 2f), 0f, 0f);
+                p.drift = Drift(p.root, new Vector3(0f, 14f, 5f), 0f, 0f);
                 p.spread = 22f;
+                CastShadows(p);
                 props.Add(p);
             }
 
@@ -203,8 +263,112 @@ namespace TubityWAI
                 {
                     MeshObj(ProceduralMeshes.Rock(c, 1, 0.5f, 2f), p.root.transform, Random.insideUnitSphere * 1.6f, Vector3.one * Random.Range(0.15f, 0.4f), rock, Random.rotation);
                 }
-                p.drift = Drift(p.root, new Vector3(3f, -5f, 4f), 0f, 0f);
+                p.drift = Drift(p.root, new Vector3(11f, -18f, 14f), 0f, 0f);
                 p.spread = 20f;
+                props.Add(p);
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // SOLAR SYSTEM: almost nothing. The named planets on a solar route are
+        // world-space landmarks placed by CelestialRoute at fixed distances, not
+        // per-segment props, so all this theme contributes is the occasional bit
+        // of rock drifting past to give the empty stretches a sense of motion.
+        // ------------------------------------------------------------------
+        private static Material SunlitRock(string key, int seed, Color dark, Color light, float relief, float tiling)
+        {
+            // Low smoothness, strong relief, no emission: out here the only thing shaping a rock is
+            // the sun's terminator, so the normal map has to do all of the work.
+            return Mat(key, Color.white, 0f, 0.14f, 0f, false, 1f,
+                       ProceduralTextures.Rock(seed, dark, light, relief), tiling, 2.1f);
+        }
+
+        private static void BuildSolarSystem(Transform parent, List<Prop> props)
+        {
+            Material rock = SunlitRock("sol_rock", 11, new Color(0.055f, 0.050f, 0.048f), new Color(0.30f, 0.27f, 0.25f), 3f, 1.5f);
+
+            for (int i = 0; i < 3; i++)
+            {
+                Prop p = NewProp(parent, "Meteoroid", Placement.Floating, 0.5f, 1.6f, 1.2f);
+                int chunks = Random.Range(1, 3);
+                for (int c = 0; c < chunks; c++)
+                {
+                    Mesh m = ProceduralMeshes.Rock(Random.Range(0, 4), 2, 0.45f, 1.8f);
+                    Vector3 sc = new Vector3(Random.Range(0.7f, 1.4f), Random.Range(0.6f, 1.1f), Random.Range(0.7f, 1.4f));
+                    MeshObj(m, p.root.transform, Random.insideUnitSphere * 0.5f, sc, rock, Random.rotation);
+                }
+                p.drift = Drift(p.root, new Vector3(Random.Range(-18f, 18f), Random.Range(-18f, 18f), 0f), 0f, 0f);
+                p.spread = 30f;
+                CastShadows(p);
+                props.Add(p);
+            }
+
+            {
+                Prop p = NewProp(parent, "Dust", Placement.Floating, 0.6f, 1.2f, 1.6f);
+                for (int c = 0; c < 4; c++)
+                {
+                    MeshObj(ProceduralMeshes.Rock(c + 5, 1, 0.5f, 2f), p.root.transform,
+                            Random.insideUnitSphere * 1.8f, Vector3.one * Random.Range(0.08f, 0.2f), rock, Random.rotation);
+                }
+                p.drift = Drift(p.root, new Vector3(9f, -14f, 11f), 0f, 0f);
+                p.spread = 26f;
+                props.Add(p);
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // ASTEROID BELT: the same rock, but everywhere. Sizes run from gravel to
+        // small moons so the field reads as depth rather than as one repeated
+        // object, and the biggest ones cast so the tube flies through real shade.
+        // ------------------------------------------------------------------
+        private static void BuildAsteroidBelt(Transform parent, List<Prop> props)
+        {
+            Material rock = SunlitRock("belt_rock", 12, new Color(0.075f, 0.065f, 0.058f), new Color(0.38f, 0.33f, 0.28f), 3.2f, 1.5f);
+            Material ice = SunlitRock("belt_ice", 13, new Color(0.16f, 0.20f, 0.26f), new Color(0.68f, 0.78f, 0.88f), 2.2f, 1.2f);
+            Material metal = Mat("belt_metal", new Color(0.48f, 0.46f, 0.44f), 0f, 0.62f, 0.75f, false, 1f,
+                                 ProceduralTextures.Rock(14, new Color(0.22f, 0.21f, 0.20f), new Color(0.62f, 0.60f, 0.58f), 1.6f), 2f, 1.5f);
+
+            // Four big ones: these are the silhouettes the player actually flies past.
+            for (int i = 0; i < 4; i++)
+            {
+                Prop p = NewProp(parent, "Asteroid", Placement.Floating, 1.8f, 4.5f, 1.5f);
+                Material m = i == 3 ? ice : rock;
+                int chunks = Random.Range(2, 4);
+                for (int c = 0; c < chunks; c++)
+                {
+                    Vector3 sc = new Vector3(Random.Range(0.7f, 1.6f), Random.Range(0.6f, 1.2f), Random.Range(0.7f, 1.5f));
+                    MeshObj(ProceduralMeshes.Rock(Random.Range(0, 4), 2, 0.42f, 1.7f), p.root.transform,
+                            Random.insideUnitSphere * 0.7f, sc, m, Random.rotation);
+                }
+                p.drift = Drift(p.root, new Vector3(Random.Range(-22f, 22f), Random.Range(-22f, 22f), 0f), 0f, 0f);
+                p.spread = 24f;
+                CastShadows(p);
+                props.Add(p);
+            }
+
+            // Mid-field rubble, kept off the shadow pass - at this size the shadow is noise.
+            for (int i = 0; i < 4; i++)
+            {
+                Prop p = NewProp(parent, "Rubble", Placement.Floating, 0.7f, 2f, 1.2f);
+                MeshObj(ProceduralMeshes.Rock(i + 15, 2, 0.5f, 2f), p.root.transform, Vector3.zero,
+                        new Vector3(Random.Range(0.8f, 1.5f), Random.Range(0.7f, 1.2f), Random.Range(0.8f, 1.4f)),
+                        i % 4 == 0 ? metal : rock, Random.rotation);
+                p.drift = Drift(p.root, new Vector3(Random.Range(-34f, 34f), Random.Range(-34f, 34f), Random.Range(-20f, 20f)), 0f, 0f);
+                p.spread = 30f;
+                props.Add(p);
+            }
+
+            // Gravel clouds: cheap, and they are what sells the field as dense rather than sparse.
+            for (int i = 0; i < 2; i++)
+            {
+                Prop p = NewProp(parent, "Gravel", Placement.Floating, 0.8f, 1.6f, 2.2f);
+                for (int c = 0; c < 5; c++)
+                {
+                    MeshObj(ProceduralMeshes.Rock(c, 1, 0.55f, 2.2f), p.root.transform,
+                            Random.insideUnitSphere * 2.4f, Vector3.one * Random.Range(0.12f, 0.35f), rock, Random.rotation);
+                }
+                p.drift = Drift(p.root, new Vector3(13f, -17f, 9f), 0f, 0f);
+                p.spread = 28f;
                 props.Add(p);
             }
         }
@@ -216,11 +380,11 @@ namespace TubityWAI
         private static void BuildJungle(Transform parent, List<Prop> props)
         {
             Material trunk = Mat("jungle_trunk", Color.white, 0f, 0.15f, 0f, false, 1f,
-                                 ProceduralTextures.Bark(1, new Color(0.16f, 0.09f, 0.04f), new Color(0.42f, 0.26f, 0.12f)), 1.5f, 1.2f);
+                                 ProceduralTextures.Bark(1, new Color(0.16f, 0.09f, 0.04f), new Color(0.42f, 0.26f, 0.12f)), 1.5f, 1.9f);
             Material leaf = Mat("jungle_leaf", Color.white, 0.05f, 0.4f, 0f, false, 1f,
                                 ProceduralTextures.Leaf(1, new Color(0.10f, 0.42f, 0.12f), new Color(0.38f, 0.85f, 0.25f), new Color(0.75f, 0.95f, 0.45f)), 1f);
             Material moss = Mat("jungle_moss", Color.white, 0f, 0.2f, 0f, false, 1f,
-                                ProceduralTextures.Foliage(4, new Color(0.08f, 0.16f, 0.09f), new Color(0.22f, 0.40f, 0.16f)), 1.5f, 1.4f);
+                                ProceduralTextures.Foliage(4, new Color(0.08f, 0.16f, 0.09f), new Color(0.22f, 0.40f, 0.16f)), 1.5f, 2.0f);
             Material vine = Mat("jungle_vine", Color.white, 0f, 0.3f, 0f, false, 1f,
                                 ProceduralTextures.Bark(3, new Color(0.10f, 0.28f, 0.08f), new Color(0.28f, 0.55f, 0.18f)), 1f);
             Color[] canopyDark = { new Color(0.06f, 0.30f, 0.10f), new Color(0.10f, 0.38f, 0.08f), new Color(0.04f, 0.24f, 0.10f) };
@@ -252,6 +416,7 @@ namespace TubityWAI
                 }
                 p.lowerHalfBias = true;
                 p.spread = 12f;
+                CastShadows(p);
                 props.Add(p);
             }
 
@@ -295,6 +460,7 @@ namespace TubityWAI
                 MeshObj(ProceduralMeshes.Rock(i + 40, 2, 0.3f, 1.5f), p.root.transform, new Vector3(0f, 0.5f, 0f), new Vector3(1.8f, 1.1f, 1.5f), moss, Quaternion.Euler(0f, Random.Range(0f, 360f), 0f));
                 p.lowerHalfBias = true;
                 p.spread = 8f;
+                CastShadows(p);
                 props.Add(p);
             }
 
@@ -322,7 +488,7 @@ namespace TubityWAI
             Material frond = Mat("sea_frond", Color.white, 0.05f, 0.5f, 0f, false, 1f,
                                  ProceduralTextures.Leaf(5, new Color(0.06f, 0.35f, 0.24f), new Color(0.20f, 0.70f, 0.45f), new Color(0.45f, 0.90f, 0.60f)), 1f);
             Material rock = Mat("sea_rock", Color.white, 0f, 0.3f, 0f, false, 1f,
-                                ProceduralTextures.Rock(6, new Color(0.04f, 0.08f, 0.15f), new Color(0.16f, 0.24f, 0.36f), 2.5f), 1.5f);
+                                ProceduralTextures.Rock(6, new Color(0.04f, 0.08f, 0.15f), new Color(0.16f, 0.24f, 0.36f), 2.5f), 1.5f, 1.8f);
             Material jelly = Mat("sea_jelly", new Color(0.55f, 0.90f, 1f), 1.3f, 0.95f, 0f, true, 0.42f);
             Material tendril = Mat("sea_tendril", new Color(0.8f, 0.5f, 1f), 1.0f, 0.5f, 0f, true, 0.3f);
             Material jellyCore = Mat("sea_jellycore", new Color(1f, 0.6f, 0.9f), 2.5f, 0.8f);
@@ -378,6 +544,7 @@ namespace TubityWAI
                 MeshObj(ProceduralMeshes.Rock(i + 60, 3, 0.10f, 4.5f), p.root.transform, new Vector3(0f, 0.5f, 0f), new Vector3(1.4f, 0.9f, 1.3f), cm, Quaternion.identity);
                 p.lowerHalfBias = true;
                 p.spread = 6f;
+                CastShadows(p);
                 props.Add(p);
             }
 
@@ -395,7 +562,7 @@ namespace TubityWAI
                 }
                 p.upright = true;
                 p.spread = 18f;
-                p.drift = Drift(p.root, new Vector3(0f, 10f, 0f), 0.7f, Random.Range(0.6f, 1.1f));
+                p.drift = Drift(p.root, new Vector3(0f, 22f, 0f), 0.7f, Random.Range(1.8f, 2.8f));
                 props.Add(p);
             }
 
@@ -405,6 +572,7 @@ namespace TubityWAI
                 MeshObj(ProceduralMeshes.Rock(i + 80, 2, 0.35f, 1.6f), p.root.transform, new Vector3(0f, 0.4f, 0f), new Vector3(1.6f, 0.9f, 1.3f), rock, Quaternion.Euler(0f, Random.Range(0f, 360f), 0f));
                 p.lowerHalfBias = true;
                 p.spread = 8f;
+                CastShadows(p);
                 props.Add(p);
             }
         }
@@ -416,11 +584,11 @@ namespace TubityWAI
         private static void BuildVolcano(Transform parent, List<Prop> props)
         {
             Material obsidian = Mat("lava_obsidian", Color.white, 0f, 0.92f, 0.35f, false, 1f,
-                                    ProceduralTextures.Rock(9, new Color(0.03f, 0.02f, 0.04f), new Color(0.10f, 0.07f, 0.12f), 1.2f), 1.5f, 0.6f);
+                                    ProceduralTextures.Rock(9, new Color(0.03f, 0.02f, 0.04f), new Color(0.10f, 0.07f, 0.12f), 1.2f), 1.5f, 1.1f);
             ProceduralTextures.TexSet lavaTex = ProceduralTextures.LavaCracks(1, new Color(0.10f, 0.05f, 0.04f), new Color(1f, 0.45f, 0.05f), 0.07f);
-            Material lava = Mat("lava_cracked", Color.white, 2.8f, 0.25f, 0f, false, 1f, lavaTex, 1f, 1.5f);
+            Material lava = Mat("lava_cracked", Color.white, 2.8f, 0.25f, 0f, false, 1f, lavaTex, 1f, 2.1f);
             ProceduralTextures.TexSet hotTex = ProceduralTextures.LavaCracks(2, new Color(0.14f, 0.08f, 0.06f), new Color(1f, 0.30f, 0.02f), 0.05f);
-            Material hotRock = Mat("lava_hotrock", Color.white, 1.8f, 0.3f, 0f, false, 1f, hotTex, 1.5f, 1.5f);
+            Material hotRock = Mat("lava_hotrock", Color.white, 1.8f, 0.3f, 0f, false, 1f, hotTex, 1.5f, 2.0f);
             Material pool = Mat("lava_pool", Color.white, 3.5f, 0.15f, 0f, false, 1f,
                                 ProceduralTextures.LavaCracks(3, new Color(0.35f, 0.08f, 0.02f), new Color(1f, 0.55f, 0.08f), 0.16f), 1f, 1f);
 
@@ -432,6 +600,7 @@ namespace TubityWAI
                 MeshObj(ProceduralMeshes.Crystal(i + 4, 5, 0.6f, h * 0.55f, 0.35f), p.root.transform, new Vector3(0.7f, 0f, -0.4f), Vector3.one, obsidian, Quaternion.Euler(Random.Range(5f, 18f), Random.Range(0f, 360f), 0f));
                 p.lowerHalfBias = true;
                 p.spread = 12f;
+                CastShadows(p);
                 props.Add(p);
             }
 
@@ -456,7 +625,7 @@ namespace TubityWAI
                 Prop p = NewProp(parent, "HotRock", Placement.Floating, 0.8f, 2f, 1.3f);
                 MeshObj(ProceduralMeshes.Rock(i + 100, 2, 0.4f, 1.6f), p.root.transform, Vector3.zero, new Vector3(1.3f, 1.0f, 1.2f), hotRock, Quaternion.identity);
                 p.spread = 20f;
-                p.drift = Drift(p.root, new Vector3(Random.Range(-6f, 6f), Random.Range(-6f, 6f), 0f), 0f, 0f);
+                p.drift = Drift(p.root, new Vector3(Random.Range(-20f, 20f), Random.Range(-20f, 20f), 0f), 0f, 0f);
                 props.Add(p);
             }
 
@@ -468,6 +637,7 @@ namespace TubityWAI
                 MeshObj(ProceduralMeshes.Cone(i + 115, 1.3f, 0.9f, h * 0.35f, 8, 3, 0.2f, 0f, true), p.root.transform, Vector3.zero, Vector3.one, obsidian, Quaternion.identity);
                 p.lowerHalfBias = true;
                 p.spread = 10f;
+                CastShadows(p);
                 props.Add(p);
             }
         }
@@ -479,9 +649,9 @@ namespace TubityWAI
         private static void BuildCrystal(Transform parent, List<Prop> props)
         {
             ProceduralTextures.TexSet iceTex = ProceduralTextures.Ice(1, new Color(0.62f, 0.78f, 0.92f), new Color(0.95f, 1f, 1f));
-            Material ice = Mat("ice_boulder", Color.white, 0.08f, 0.88f, 0.05f, false, 1f, iceTex, 1.5f, 1.2f);
+            Material ice = Mat("ice_boulder", Color.white, 0.08f, 0.88f, 0.05f, false, 1f, iceTex, 1.5f, 1.8f);
             Material pillar = Mat("ice_pillar", new Color(0.85f, 0.92f, 1f), 0.08f, 0.8f, 0.05f, false, 1f,
-                                  ProceduralTextures.Ice(2, new Color(0.50f, 0.66f, 0.86f), new Color(0.85f, 0.95f, 1f)), 1.5f, 1f);
+                                  ProceduralTextures.Ice(2, new Color(0.50f, 0.66f, 0.86f), new Color(0.85f, 0.95f, 1f)), 1.5f, 1.6f);
             Color[] gems = { new Color(0.30f, 0.90f, 1f), new Color(0.70f, 0.40f, 1f), new Color(1f, 0.40f, 0.90f), new Color(0.3f, 1f, 0.7f) };
 
             for (int i = 0; i < 5; i++)
@@ -500,6 +670,7 @@ namespace TubityWAI
                 MeshObj(ProceduralMeshes.Rock(i + 120, 2, 0.3f, 1.5f), p.root.transform, new Vector3(0f, 0.1f, 0f), new Vector3(1.4f, 0.5f, 1.3f), ice, Quaternion.identity);
                 p.lowerHalfBias = true;
                 p.spread = 8f;
+                CastShadows(p);
                 props.Add(p);
             }
 
@@ -509,6 +680,7 @@ namespace TubityWAI
                 MeshObj(ProceduralMeshes.Rock(i + 130, 3, 0.25f, 1.4f), p.root.transform, new Vector3(0f, 0.6f, 0f), new Vector3(1.4f, 1.1f, 1.3f), ice, Quaternion.Euler(0f, Random.Range(0f, 360f), 0f));
                 p.lowerHalfBias = true;
                 p.spread = 8f;
+                CastShadows(p);
                 props.Add(p);
             }
 
@@ -525,6 +697,7 @@ namespace TubityWAI
                     MeshObj(ProceduralMeshes.Crystal(s + 50, 6, 0.3f, 1.8f, 0.4f), p.root.transform, tilt * new Vector3(0f, 0f, 0f) + new Vector3(0f, 0f, 0f), Vector3.one, gm, tilt);
                 }
                 p.spread = 12f;
+                CastShadows(p);
                 props.Add(p);
             }
 
@@ -535,7 +708,7 @@ namespace TubityWAI
                 Material gm = Mat("ice_shard_" + ColorKey(gc), gc, 3.0f, 0.9f);
                 MeshObj(ProceduralMeshes.Crystal(i + 60, 5, 0.28f, 2.4f, 0.45f), p.root.transform, new Vector3(0f, -1.2f, 0f), Vector3.one, gm, Quaternion.identity);
                 p.spread = 14f;
-                p.drift = Drift(p.root, new Vector3(0f, 30f, 45f), 0.4f, 0.8f);
+                p.drift = Drift(p.root, new Vector3(0f, 50f, 70f), 0.4f, 2.0f);
                 props.Add(p);
             }
         }
@@ -547,7 +720,7 @@ namespace TubityWAI
         {
             GameObject root = new GameObject(name);
             root.transform.SetParent(parent, false);
-            return new Prop
+            Prop prop = new Prop
             {
                 root = root,
                 placement = placement,
@@ -555,11 +728,37 @@ namespace TubityWAI
                 maxScale = maxScale,
                 bodyRadius = bodyRadius
             };
+
+            SceneryDrift d = root.AddComponent<SceneryDrift>();
+            float dir = Random.value < 0.5f ? -1f : 1f;
+            if (placement == Placement.Grounded)
+            {
+                // Anchored to the tube wall: it creeps around the tube and leans,
+                // but never slides off its footing.
+                prop.orbitSpeed = dir * Random.Range(4f, 9f);
+                d.alignToRadial = true;
+                d.tiltAmplitude = Random.Range(3f, 8f);
+                d.tiltSpeed = Random.Range(1.1f, 2.2f);
+            }
+            else
+            {
+                // Free-floating: orbits faster and drifts along and across the tube.
+                prop.orbitSpeed = dir * Random.Range(10f, 28f);
+                d.surgeAmplitude = Random.Range(1.2f, 2.2f);
+                d.surgeSpeed = Random.Range(1.0f, 2.0f);
+                d.swayAmplitude = Random.Range(1.8f, 3.5f);
+                d.swaySpeed = Random.Range(0.9f, 1.8f);
+                d.radialAmplitude = Random.Range(1.0f, 2.2f);
+                d.radialSpeed = Random.Range(0.8f, 1.6f);
+            }
+            prop.drift = d;
+            return prop;
         }
 
         private static SceneryDrift Drift(GameObject root, Vector3 spin, float bobAmplitude, float bobSpeed)
         {
-            SceneryDrift d = root.AddComponent<SceneryDrift>();
+            SceneryDrift d = root.GetComponent<SceneryDrift>();
+            if (d == null) d = root.AddComponent<SceneryDrift>();
             d.spin = spin;
             d.bobAmplitude = bobAmplitude;
             d.bobSpeed = bobSpeed;
@@ -569,10 +768,28 @@ namespace TubityWAI
         private static void SetupRenderer(MeshRenderer r, Material mat)
         {
             r.sharedMaterial = mat;
+            // Casting is opt-in per prop (see CastShadows); receiving is on for everything, because
+            // it is the sampling that gives an unlit-looking prop its footing and it costs nothing
+            // extra once the main light's shadow pass is already running.
             r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            r.receiveShadows = false;
+            r.receiveShadows = true;
             r.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
             r.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
+        }
+
+        /// <summary>
+        /// Opts a prop into the main light's shadow pass. Reserved for the big grounded silhouettes -
+        /// trunks, spires, pillars, boulders - because they are the only things whose shadow lands
+        /// somewhere the player can see it. Scattering it over ferns, debris and floating props would
+        /// multiply the shadow-map draw calls for detail that reads as noise at flying speed.
+        /// </summary>
+        private static void CastShadows(Prop prop)
+        {
+            MeshRenderer[] renderers = prop.root.GetComponentsInChildren<MeshRenderer>(true);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                renderers[i].shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+            }
         }
 
         /// <summary>A generated mesh as a child renderer (no collider).</summary>

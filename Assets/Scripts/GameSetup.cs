@@ -222,8 +222,20 @@ namespace TubityWAI
             StartGame(sphereCount, defaultConfig);
         }
 
-        public void StartGame(int chosenCount, LevelConfig config)
+        /// <summary>
+        /// Builds a run. `inPlace` is GameManager's level-to-level hand-off: the previous run's
+        /// tube is still on screen being animated away, and the camera is mid-flight, so neither
+        /// is reset here - and the music carries on if the new level shares the old one's world.
+        /// </summary>
+        public void StartGame(int chosenCount, LevelConfig config, bool inPlace = false)
         {
+            // A level laid out for a particular sphere count gets that count, whichever path
+            // launched it (menu, next level, replay).
+            if (config != null && config.forcedSphereCount > 0) chosenCount = config.forcedSphereCount;
+
+            LevelConfig previousConfig = GameManager.Instance != null ? GameManager.Instance.currentLevelConfig : null;
+            bool keepMusic = inPlace && previousConfig != null && previousConfig.environment == config.environment;
+
             // Hide MainMenu if present in scene
             MainMenu mainMenu = FindFirstObjectByType<MainMenu>();
             if (mainMenu != null)
@@ -242,10 +254,13 @@ namespace TubityWAI
             if (attractionCam != null) Destroy(attractionCam);
             
             // Clean up any generated tunnel segments from attraction mode
-            TunnelSegment[] existingSegments = FindObjectsByType<TunnelSegment>(FindObjectsSortMode.None);
-            foreach (var segment in existingSegments)
+            if (!inPlace)
             {
-                Destroy(segment.gameObject);
+                TunnelSegment[] existingSegments = FindObjectsByType<TunnelSegment>(FindObjectsSortMode.None);
+                foreach (var segment in existingSegments)
+                {
+                    Destroy(segment.gameObject);
+                }
             }
 
             // Reset camera position and target
@@ -253,8 +268,11 @@ namespace TubityWAI
             CameraController camController = null;
             if (mainCam != null)
             {
-                mainCam.transform.position = Vector3.zero;
-                mainCam.transform.rotation = Quaternion.identity;
+                if (!inPlace)
+                {
+                    mainCam.transform.position = Vector3.zero;
+                    mainCam.transform.rotation = Quaternion.identity;
+                }
                 if (config.isTransparentTube)
                 {
                     mainCam.clearFlags = CameraClearFlags.SolidColor;
@@ -271,6 +289,10 @@ namespace TubityWAI
                     camController.target = null;
                 }
             }
+
+            // The tutorial is flagged as a test level (one sphere, no random spawns) but the
+            // sphere itself should look exactly like campaign level 1: equipped skin, no FX preset.
+            bool isTutorialLevel = config.levelNumber == 99 || (config.levelName != null && config.levelName.ToUpper().Contains("HOW TO PLAY"));
 
             // Override setup settings with chosen level parameters (force 1 sphere for test levels)
             this.sphereCount = config.isTestLevel ? 1 : chosenCount;
@@ -296,19 +318,28 @@ namespace TubityWAI
             GameManager.Instance.currentSphereCount = chosenCount;
             GameManager.Instance.currentLevelConfig = config;
 
-            if (MusicPlayer.Instance != null)
+            if (MusicPlayer.Instance != null && !keepMusic)
             {
-                MusicPlayer.Instance.PlayGameplayMusic(config.environment);
+                // The tutorial keeps the menu's ambient loop running underneath it; real levels get gameplay music.
+                if (isTutorialLevel) MusicPlayer.Instance.KeepMenuAmbient();
+                else MusicPlayer.Instance.PlayGameplayMusic(config.environment);
             }
 
             // Themed environment palette (null for the classic neon tunnel). The manager itself is
             // created after the lighting pass below so its sky/fog/light settings win.
             EnvironmentManager.Clear();
-            EnvironmentPalette envPalette = EnvironmentPalettes.Get(config.environment);
+            CelestialBodies.Clear();
+            // A blended level needs a palette even when it starts on the classic tunnel, because the sky,
+            // fog and tube are all under the blender's control from the first frame.
+            EnvironmentPalette envPalette = config.HasEnvironmentBlend
+                ? EnvironmentPalettes.GetOrClassic(config.environmentBlend.FirstTheme)
+                : EnvironmentPalettes.Get(config.environment);
 
             // 1. Create Materials
+            // A blend always gets the transparent tube shader: the wall starts at full opacity and the
+            // blender fades it down as the environment opens up, which an opaque material could not do.
             Material tunnelMaterial;
-            if (config.isTransparentTube)
+            if (config.isTransparentTube || config.HasEnvironmentBlend)
             {
                 Color tubeTint = envPalette != null ? envPalette.tubeTint : new Color(0f, 0.85f, 1f, 0.3f);
                 tunnelMaterial = CreateTransparentMaterial("TransparentTunnelMaterial", tubeTint, 0.5f, 0.95f);
@@ -342,12 +373,14 @@ namespace TubityWAI
             {
                 Color gLineColor = config.isTransparentTube ? new Color(0f, 1f, 0.85f, 1f) : gridLineColor;
                 Color tBaseColor = config.isTransparentTube ? new Color(0.01f, 0.02f, 0.06f, 0.3f) : tunnelBaseColor;
+                Color gAccentColor = TubityXPalette.Magenta;
                 if (envPalette != null)
                 {
                     gLineColor = envPalette.tubeGridColor;
                     tBaseColor = envPalette.tubeBaseColor;
+                    gAccentColor = envPalette.accentColor;
                 }
-                activeTexture = GenerateGridTexture(gLineColor, tBaseColor);
+                activeTexture = GenerateGridTexture(gLineColor, tBaseColor, gAccentColor);
             }
             if (activeTexture != null)
             {
@@ -410,7 +443,7 @@ namespace TubityWAI
                 
                 Material playerMaterial;
                 int equippedSkin = GameManager.Instance != null ? GameManager.Instance.EquippedSkin : 0;
-                SphereSkinCatalog.Skin skin = config.isTestLevel ? null : SphereSkinCatalog.Get(equippedSkin);
+                SphereSkinCatalog.Skin skin = (config.isTestLevel && !isTutorialLevel) ? null : SphereSkinCatalog.Get(equippedSkin);
 
                 if (skin == null)
                 {
@@ -453,8 +486,8 @@ namespace TubityWAI
                 light.range = 7f;
                 light.intensity = 1.5f;
 
-                // Test levels showcase the particle presets
-                if (config.isTestLevel)
+                // Test levels showcase the particle presets (the tutorial keeps the campaign look)
+                if (config.isTestLevel && !isTutorialLevel)
                 {
                     EnergySphereEffects effects = sphereObj.AddComponent<EnergySphereEffects>();
                     if (config.levelNumber == 101) effects.preset = EnergySphereEffects.EffectPreset.Plasma;
@@ -530,9 +563,10 @@ namespace TubityWAI
             GameObject hudObj = new GameObject("GameHUD");
             GameHUD hud = hudObj.AddComponent<GameHUD>();
             hud.player = playerController;
+            if (isTutorialLevel) hud.SetStatsPanelVisible(false);   // the tutorial's own copy is the only HUD text
 
             // Setup FTUE Manager if this is the FTUE Tutorial level
-            if (config.levelNumber == 99 || (config.levelName != null && config.levelName.ToUpper().Contains("HOW TO PLAY")))
+            if (isTutorialLevel)
             {
                 GameObject ftueObj = new GameObject("FTUEManager");
                 ftueObj.AddComponent<FTUEManager>();
@@ -556,6 +590,17 @@ namespace TubityWAI
             tunnelGen.transparentObstacleMaterials = transparentObstacleMaterials;
             tunnelGen.obstacleSpawnProbability = obstacleSpawnProbability;
 
+            // The tutorial places its own arcs and coins on cue (see FTUEManager), so the
+            // segments stay clear apart from what the current step lays down.
+            if (isTutorialLevel)
+            {
+                tunnelGen.spawnCoins = false;
+                tunnelGen.spawnObstacles = false;
+            }
+
+            // The sandbox lab keeps the coins for something to do but never spawns an arc.
+            if (config.sandbox) tunnelGen.spawnObstacles = false;
+
             // 5. Setup Ambient Lighting & Dim Existing Lights
             RenderSettings.ambientMode = AmbientMode.Flat;
             RenderSettings.ambientLight = new Color(0.05f, 0.05f, 0.08f);
@@ -575,7 +620,20 @@ namespace TubityWAI
             // Scenery props are added per tunnel segment by EnvironmentScenery.
             if (envPalette != null)
             {
-                EnvironmentManager.Create(envPalette, mainCam);
+                EnvironmentManager mgr = EnvironmentManager.Create(envPalette, mainCam, config.environmentBlend);
+                if (mgr != null && config.HasEnvironmentBlend)
+                {
+                    EnvironmentTubeBlender.Attach(mgr.gameObject, tunnelMaterial, config.environmentBlend,
+                                                  new Vector2(gridTilingU, gridTilingV));
+                }
+            }
+
+            // Named landmark bodies sit outside the segment pool and outside the environment root -
+            // that root is parented to the camera every frame, which would drag the planets along.
+            // Create() also pushes the camera's far clip out past the furthest body.
+            if (config.HasCelestialRoute)
+            {
+                CelestialBodies.Create(config.celestialRoute.bodies, mainCam);
             }
 
             // 6. Setup Bloom Post-Processing (neon bloom levels borrow the attract screen's hotter settings)
@@ -684,28 +742,13 @@ namespace TubityWAI
             return mat;
         }
 
-        private Texture2D GenerateGridTexture(Color lineColor, Color bgColor)
+        /// <summary>
+        /// The tube wall's grid. Shared with EnvironmentTubeBlender through TunnelGridTexture so a
+        /// blended level's first repaint lines up exactly with the texture baked here.
+        /// </summary>
+        private Texture2D GenerateGridTexture(Color lineColor, Color bgColor, Color accentColor)
         {
-            int size = 128;
-            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, true);
-            tex.wrapMode = TextureWrapMode.Repeat;
-            tex.filterMode = FilterMode.Bilinear;
-
-            Color[] pixels = new Color[size * size];
-            int thickness = 4; // grid line thickness
-
-            for (int y = 0; y < size; y++)
-            {
-                for (int x = 0; x < size; x++)
-                {
-                    bool isGridLine = (x < thickness || x >= size - thickness || y < thickness || y >= size - thickness);
-                    pixels[y * size + x] = isGridLine ? lineColor : bgColor;
-                }
-            }
-
-            tex.SetPixels(pixels);
-            tex.Apply();
-            return tex;
+            return TunnelGridTexture.Create(lineColor, bgColor, accentColor);
         }
 
         /// <summary>

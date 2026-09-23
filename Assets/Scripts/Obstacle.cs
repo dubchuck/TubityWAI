@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace TubityWAI
@@ -26,6 +27,26 @@ namespace TubityWAI
         private float colorShiftTimer = 0f;
         private System.Random shiftRng;
 
+        [Header("Depth Readout")]
+        [Tooltip("Overrides the arc's body colour. Successive rings alternate through a small " +
+                 "palette so neighbouring rings separate in depth instead of blending into one wash. " +
+                 "Alpha 0 leaves the material's own colour alone.")]
+        public Color tintColor = new Color(0f, 0f, 0f, 0f);
+        [Tooltip("Self-lit brightness of a tinted body, as a multiplier on the tint. The tunnel is " +
+                 "lit almost entirely by emission - ambient is 0.05 and the only real lamp is the " +
+                 "player's own 7-unit point light - so an arc at 0 is invisible until it is nearly " +
+                 "on top of you. Bloom cuts in at 0.85, so anything below that is visible without " +
+                 "glowing: that is the band this wants to sit in.")]
+        public float bodyEmission = 0.6f;
+        [Tooltip("Outline traced around the arc's leading face. This is what carries the arc's " +
+                 "shape at distance once the body is no longer glowing.")]
+        public Material borderMaterial;
+        [Tooltip("Radial width of that outline, in world units.")]
+        public float borderWidth = 0.14f;
+        [Tooltip("Outline brightness as a multiplier on the arc's colour. Just over the 0.85 bloom " +
+                 "threshold gives a crisp edge with a tight pop; well over it starts to smear.")]
+        public float borderIntensity = 1.3f;
+
         [Header("Neon Halo (optional)")]
         [Tooltip("Additive ribbon material (TubityX/NeonBandHalo) drawn as a soft cloud around the arc's face. Null = no halo.")]
         public Material haloMaterial;
@@ -50,6 +71,10 @@ namespace TubityWAI
         {
             GenerateMesh();
             CreateCompoundTriggers();
+            if (borderMaterial != null)
+            {
+                BuildBorder();
+            }
             if (haloMaterial != null)
             {
                 BuildHalo();
@@ -59,6 +84,108 @@ namespace TubityWAI
         private void OnDestroy()
         {
             if (haloMesh != null) Destroy(haloMesh);
+            if (borderMesh != null) Destroy(borderMesh);
+        }
+
+        private Mesh borderMesh;
+        private Material borderInstance;
+
+        /// <summary>Repaints the outline after the arc changes which colour it accepts, so the
+        /// edge never advertises a colour the body no longer matches.</summary>
+        private void RefreshBorderColour()
+        {
+            if (borderInstance == null) return;
+            Color lit = ReadoutColour() * borderIntensity;
+            lit.a = 1f;
+            if (borderInstance.HasProperty("_BaseColor")) borderInstance.SetColor("_BaseColor", lit);
+            else if (borderInstance.HasProperty("_Color")) borderInstance.SetColor("_Color", lit);
+            if (borderInstance.HasProperty("_EmissionColor")) borderInstance.SetColor("_EmissionColor", lit);
+        }
+
+        /// <summary>The colour this arc should read as: its tint when one was assigned, otherwise
+        /// whatever its own material carries (which is how colour-coded shields keep their meaning).</summary>
+        private Color ReadoutColour()
+        {
+            if (tintColor.a > 0f)
+            {
+                Color t = tintColor;
+                t.a = 1f;
+                return t;
+            }
+            return HaloColour();
+        }
+
+        /// <summary>
+        /// Traces a bright outline around the arc's leading face: the two curved edges and the two
+        /// end caps, as one small mesh. A flat-shaded arc of a single colour has almost no silhouette
+        /// once it is far enough away for bloom to smear it; an outline survives that distance, and
+        /// with the body dimmed it is the outline that tells the player where the arc ends.
+        /// </summary>
+        private void BuildBorder()
+        {
+            float innerRad = Mathf.Max(0.05f, radius - thickness);
+            float outerRad = radius;
+            float rMid = (innerRad + outerRad) * 0.5f;
+            float w = Mathf.Min(borderWidth, thickness * 0.4f);
+            if (w <= 0.001f) return;
+
+            // The same width in degrees, so the end caps match the curved edges.
+            float wDeg = Mathf.Min(w / Mathf.Max(0.05f, rMid) * Mathf.Rad2Deg, arcAngle * 0.4f);
+            float zFace = -depth * 0.5f - 0.015f;   // just in front of the leading face
+
+            List<Vector3> verts = new List<Vector3>();
+            List<int> tris = new List<int>();
+
+            AddBorderStrip(verts, tris, 0f, arcAngle, outerRad - w, outerRad, radialSegments, zFace);
+            AddBorderStrip(verts, tris, 0f, arcAngle, innerRad, innerRad + w, radialSegments, zFace);
+            AddBorderStrip(verts, tris, 0f, wDeg, innerRad, outerRad, 1, zFace);
+            AddBorderStrip(verts, tris, arcAngle - wDeg, arcAngle, innerRad, outerRad, 1, zFace);
+
+            borderMesh = new Mesh();
+            borderMesh.name = "ArcBorder";
+            borderMesh.SetVertices(verts);
+            borderMesh.SetTriangles(tris, 0);
+            borderMesh.RecalculateBounds();
+
+            GameObject borderObj = new GameObject("Border", typeof(MeshFilter), typeof(MeshRenderer));
+            borderObj.transform.SetParent(this.transform, false);
+            borderObj.GetComponent<MeshFilter>().sharedMesh = borderMesh;
+
+            MeshRenderer br = borderObj.GetComponent<MeshRenderer>();
+            borderInstance = new Material(borderMaterial);
+            if (borderInstance.HasProperty("_EmissionColor")) borderInstance.EnableKeyword("_EMISSION");
+            br.sharedMaterial = borderInstance;
+            RefreshBorderColour();
+            br.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            br.receiveShadows = false;
+            br.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
+            br.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
+        }
+
+        /// <summary>One quad strip of the outline, swept in angle between two radii.</summary>
+        private static void AddBorderStrip(List<Vector3> verts, List<int> tris,
+                                           float degFrom, float degTo,
+                                           float rFrom, float rTo, int segments, float z)
+        {
+            segments = Mathf.Max(1, segments);
+            int start = verts.Count;
+
+            for (int i = 0; i <= segments; i++)
+            {
+                float deg = Mathf.Lerp(degFrom, degTo, i / (float)segments);
+                float rad = deg * Mathf.Deg2Rad;
+                float sin = Mathf.Sin(rad);
+                float cos = -Mathf.Cos(rad);
+                verts.Add(new Vector3(sin * rFrom, cos * rFrom, z));
+                verts.Add(new Vector3(sin * rTo, cos * rTo, z));
+            }
+
+            for (int i = 0; i < segments; i++)
+            {
+                int a = start + i * 2;
+                tris.Add(a); tris.Add(a + 1); tris.Add(a + 2);
+                tris.Add(a + 1); tris.Add(a + 3); tris.Add(a + 2);
+            }
         }
 
         /// <summary>
@@ -222,6 +349,17 @@ namespace TubityWAI
                             matInstance.SetColor("_EmissionColor", em);
                         }
                     }
+
+                    // The outline dies with the arc it traces, or it would hang in the air as the
+                    // body shrinks away into the sphere that collected it.
+                    if (borderInstance != null)
+                    {
+                        Color fade = Color.Lerp(ReadoutColour() * borderIntensity, Color.black, t);
+                        fade.a = 1f;
+                        if (borderInstance.HasProperty("_BaseColor")) borderInstance.SetColor("_BaseColor", fade);
+                        else if (borderInstance.HasProperty("_Color")) borderInstance.SetColor("_Color", fade);
+                        if (borderInstance.HasProperty("_EmissionColor")) borderInstance.SetColor("_EmissionColor", fade);
+                    }
                 }
             }
         }
@@ -343,6 +481,32 @@ namespace TubityWAI
             if (renderer != null && obstacleMaterial != null)
             {
                 matInstance = renderer.material = new Material(obstacleMaterial);
+
+                // A tinted arc reads as a flat shape with a lit edge rather than a neon tube. The
+                // body still emits, because in this tunnel nothing unlit is visible at all, but it
+                // emits below the bloom threshold - bright enough to see, too dim to bleed. The
+                // outline sits just over the threshold, so the edge pops and the fill does not.
+                if (tintColor.a > 0f)
+                {
+                    Color body = tintColor;
+                    body.a = 1f;
+                    if (matInstance.HasProperty("_BaseColor")) matInstance.SetColor("_BaseColor", body * 0.30f);
+                    else if (matInstance.HasProperty("_Color")) matInstance.SetColor("_Color", body * 0.30f);
+                    if (matInstance.HasProperty("_EmissionColor"))
+                    {
+                        if (bodyEmission > 0f)
+                        {
+                            matInstance.EnableKeyword("_EMISSION");
+                            matInstance.SetColor("_EmissionColor", body * bodyEmission);
+                        }
+                        else
+                        {
+                            matInstance.DisableKeyword("_EMISSION");
+                            matInstance.SetColor("_EmissionColor", Color.black);
+                        }
+                    }
+                }
+
                 if (matInstance.HasProperty("_BaseColor"))
                 {
                     baseColor = matInstance.GetColor("_BaseColor");
@@ -443,6 +607,16 @@ namespace TubityWAI
                 {
                     // Color mismatch or standard solid obstacle: trigger Game Over or partial death!
                     Debug.Log($"[Obstacle] Crash! Color mismatch. Target index = {targetColorIndex}, Sphere index = {sphere.colorIndex}.");
+
+                    // In the tutorial a crash is a lesson, not a game over: the arc still
+                    // shatters for feedback and the FTUE sets the step up again.
+                    if (FTUEManager.Instance != null && FTUEManager.Instance.InterceptCrash(this))
+                    {
+                        if (player != null) player.PlaySound(ProceduralAudio.GetCrashSound());
+                        Shatter(sphere.transform);
+                        return;
+                    }
+
                     if (player != null)
                     {
                         player.HandleCrash(sphere.transform);
@@ -479,6 +653,19 @@ namespace TubityWAI
                 c.a = baseColor.a;
                 matInstance.SetColor("_BaseColor", c);
             }
+
+            // Flash the outline along with the body, so the warning is legible at the distance the
+            // outline is the only part still readable.
+            if (borderInstance != null)
+            {
+                Color lit = ReadoutColour() * borderIntensity;
+                Color hot = Color.white * Mathf.Max(1.6f, borderIntensity * 1.5f);
+                Color flash = Color.Lerp(lit, hot, strength);
+                flash.a = 1f;
+                if (borderInstance.HasProperty("_BaseColor")) borderInstance.SetColor("_BaseColor", flash);
+                else if (borderInstance.HasProperty("_Color")) borderInstance.SetColor("_Color", flash);
+                if (borderInstance.HasProperty("_EmissionColor")) borderInstance.SetColor("_EmissionColor", flash);
+            }
         }
 
         /// <summary>Switch this colour-coded arc to a different accepted colour (never the current one).</summary>
@@ -505,6 +692,7 @@ namespace TubityWAI
                 }
             }
             RefreshHaloColours();
+            RefreshBorderColour();
         }
 
         private void StartPassThroughAnimation(Transform playerSphereTransform)

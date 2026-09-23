@@ -70,6 +70,10 @@ namespace TubityWAI
         private TubityXLabel sphereIndicatorText;
         private GameObject settingsPopupObj;
 
+        // How To Play: the first PLAY press runs the in-tube tutorial level, and the
+        // top-level HOW TO PLAY button replays it any time. The flag lives in PlayerPrefs.
+        public const string HowToPlaySeenKey = "HowToPlaySeen";
+
         // Sphere-count block lock badge, shown in the Layer 1.5 selector when
         // selectedSphereCount is beyond what the player has unlocked so far.
         private GameObject confirmSphereBtnObj;
@@ -94,6 +98,9 @@ namespace TubityWAI
 
         // Shop Fields
         private GameObject layer4Obj;
+
+        // Progression Test 1 + endless modes. Owns its own layers on this canvas; see ProgressionMenu.
+        private ProgressionMenu progressionMenu;
         private TubityXLabel shopTotalCoinsText;
         private List<GameObject> shopButtons = new List<GameObject>();
         private int currentShopPage = 0;
@@ -405,6 +412,79 @@ namespace TubityWAI
 
             // Menu-style neon: rings and arcs wrapped in halo ribbons under heavier bloom.
             AddNeonBloomSet(251, "NEON BLOOM", "Hot Neon");
+
+            // Environment blending (see EnvironmentBlend): the world cross-fades as the level runs.
+            AddBlendLevels(271);
+
+            // The full solar traverse: Uranus in to Earth, finishing alongside the Moon.
+            AddSolarSystemLevel(281);
+
+            // Obstacle-free endless run with live environment / music controls (see SandboxPanel).
+            AddSandboxLevel(291);
+        }
+
+        /// <summary>
+        /// An endless, arc-free run for auditioning environment themes and comparing a straight
+        /// music track against the synchronised stem loops. It starts on the classic tube with a
+        /// one-stop blend, which is what lets SandboxPanel append further themes while flying.
+        /// </summary>
+        private void AddSandboxLevel(int number)
+        {
+            testLevelConfigs.Add(new LevelConfig(number, 14f, 0f, 2.0f, isTest: true,
+                                                 name: "AUDIO / ENV LAB", theme: "Sandbox",
+                                                 transparentTube: true)
+                                 .WithEnvironmentBlend(EnvironmentBlend.From(EnvironmentTheme.None))
+                                 .WithSandbox());
+        }
+
+        /// <summary>
+        /// Levels that cross-fade between environments instead of picking one. The first is the reference
+        /// case - the classic solid tunnel opening out into the jungle canopy - and the second chains four
+        /// stops to show that a blend takes any number of themes in any order.
+        /// </summary>
+        private void AddBlendLevels(int firstNumber)
+        {
+            LevelConfig opening = LevelProgression.CreateCampaignLevel(1);
+
+            // Solid tube for the first 90 units - long enough to read as the classic tunnel - then the
+            // canopy opens up between 90 and 260. At 13 units/sec that is about 7 seconds in the tube
+            // and 13 seconds of transition.
+            testLevelConfigs.Add(new LevelConfig(firstNumber, 13f, 0.25f, 1.9f, isTest: true,
+                                                 name: "TUBE TO CANOPY", theme: "Blend Test")
+                                 .WithRings(opening.rings)
+                                 .WithEnvironmentBlend(EnvironmentBlend.From(EnvironmentTheme.None)
+                                                                       .To(EnvironmentTheme.Jungle, 260f, blendLength: 170f)));
+
+            // A continuous morph through four worlds, each cross-fade spanning the whole gap.
+            testLevelConfigs.Add(new LevelConfig(firstNumber + 1, 16f, 0.35f, 2.0f, isTest: true,
+                                                 name: "GRAND TOUR", theme: "Blend Test",
+                                                 curves: true, curveFreq: 0.04f, curveAmp: 3.0f)
+                                 .WithEnvironmentBlend(EnvironmentBlend.From(EnvironmentTheme.None)
+                                                                       .To(EnvironmentTheme.Space, 240f, blendLength: 150f)
+                                                                       .To(EnvironmentTheme.Crystal, 540f)
+                                                                       .To(EnvironmentTheme.Volcano, 840f)));
+        }
+
+        /// <summary>
+        /// The solar system traverse (see SolarSystemRoute): a four-minute run inward from Uranus
+        /// past Saturn and Jupiter, through the asteroid belt and Mars, finishing at the Moon with
+        /// Earth ahead. The route brings its own environment blend, so all this sets is the pacing.
+        ///
+        /// Obstacle density is deliberately low and the curves are gentle: the level's content is
+        /// what is out of the window, and a tube that swings hard would keep throwing the planets
+        /// out of frame.
+        /// </summary>
+        private void AddSolarSystemLevel(int number)
+        {
+            LevelConfig refLevel = LevelProgression.CreateCampaignLevel(10);
+
+            testLevelConfigs.Add(new LevelConfig(number, 18f, 0.20f, 2.0f, isTest: true,
+                                                 name: "SOLAR TRAVERSE", theme: "Solar System",
+                                                 curves: true, curveFreq: 0.012f, curveAmp: 2.5f,
+                                                 transparentTube: true)
+                                 .WithRings(refLevel.rings)
+                                 .WithCelestialRoute(SolarSystemRoute.Build())
+                                 .WithLength(SolarSystemRoute.FinishDistance));
         }
 
         /// <summary>
@@ -538,7 +618,19 @@ namespace TubityWAI
             playRect.anchorMax = new Vector2(0.05f, 0.08f);
             playRect.pivot = new Vector2(0f, 0f);
             playRect.anchoredPosition = Vector2.zero;
-            playBtnObj.GetComponent<Button>().onClick.AddListener(() => { PlayMenuForward(); ShowSphereSelection3D(); });
+            playBtnObj.GetComponent<Button>().onClick.AddListener(() => { PlayMenuForward(); OnPlayPressed(); });
+
+            // 1b. HOW TO PLAY BUTTON (Bottom Centre) - cyan, steady border
+            GameObject howToBtnObj = TubityXUIFactory.CreateButton(
+                layer1Obj.transform, new Vector2(330f, 76f), "? HOW TO PLAY",
+                TubityXUIFactory.Cyan, 24f, 4f, 16f, false);
+            howToBtnObj.name = "NavBtn_HowToPlay";
+            RectTransform howToRect = howToBtnObj.GetComponent<RectTransform>();
+            howToRect.anchorMin = new Vector2(0.5f, 0.08f);
+            howToRect.anchorMax = new Vector2(0.5f, 0.08f);
+            howToRect.pivot = new Vector2(0.5f, 0f);
+            howToRect.anchoredPosition = Vector2.zero;
+            howToBtnObj.GetComponent<Button>().onClick.AddListener(() => { PlayMenuForward(); LaunchFTUELevel(); });
 
             // 2. SETTINGS BUTTON (Bottom Right) - purple, steady border
             GameObject settingsBtnObj = TubityXUIFactory.CreateButton(
@@ -551,6 +643,29 @@ namespace TubityWAI
             settingsRect.pivot = new Vector2(1f, 0f);
             settingsRect.anchoredPosition = Vector2.zero;
             settingsBtnObj.GetComponent<Button>().onClick.AddListener(() => { PlayMenuForward(); OpenSettingsPopup(); });
+
+            // 3. PROGRESSION TEST 1 + ENDLESS LEVELS - a second row above the main three.
+            GameObject progressionBtnObj = TubityXUIFactory.CreateButton(
+                layer1Obj.transform, new Vector2(380f, 68f), "PROGRESSION TEST 1",
+                TubityXUIFactory.Cyan, 21f, 4f, 16f, false);
+            progressionBtnObj.name = "NavBtn_ProgressionTest1";
+            RectTransform progressionRect = progressionBtnObj.GetComponent<RectTransform>();
+            progressionRect.anchorMin = new Vector2(0.05f, 0.20f);
+            progressionRect.anchorMax = new Vector2(0.05f, 0.20f);
+            progressionRect.pivot = new Vector2(0f, 0f);
+            progressionRect.anchoredPosition = Vector2.zero;
+            progressionBtnObj.GetComponent<Button>().onClick.AddListener(() => { PlayMenuForward(); ShowProgressionMenu(); });
+
+            GameObject endlessBtnObj = TubityXUIFactory.CreateButton(
+                layer1Obj.transform, new Vector2(330f, 68f), "ENDLESS LEVELS",
+                TubityXUIFactory.PurpleButtonMaterial, SettingsAccentColor, 21f, 4f);
+            endlessBtnObj.name = "NavBtn_EndlessLevels";
+            RectTransform endlessRect = endlessBtnObj.GetComponent<RectTransform>();
+            endlessRect.anchorMin = new Vector2(0.95f, 0.20f);
+            endlessRect.anchorMax = new Vector2(0.95f, 0.20f);
+            endlessRect.pivot = new Vector2(1f, 0f);
+            endlessRect.anchoredPosition = Vector2.zero;
+            endlessBtnObj.GetComponent<Button>().onClick.AddListener(() => { PlayMenuForward(); ShowEndlessMenu(); });
 
             // ==========================================
             // LAYER 1.5: 3D SPHERE SELECTOR OVERLAY
@@ -897,6 +1012,14 @@ namespace TubityWAI
             layer3Obj.SetActive(false);
 
             CreateShopUI();
+
+            progressionMenu = ProgressionMenu.Create(canvasObj.transform, borderNeonColor,
+                                                     neonMagentaColor, textGoldColor);
+            progressionMenu.onLaunch = LaunchGame;
+            progressionMenu.onExit = ShowLayer1;
+            progressionMenu.onForwardSound = PlayMenuForward;
+            progressionMenu.onBackSound = PlayMenuBack;
+            progressionMenu.onSelectSound = PlayMenuSelect;
         }
 
 
@@ -965,8 +1088,9 @@ namespace TubityWAI
             if (layer2Obj != null) layer2Obj.SetActive(false);
             if (layer3Obj != null) layer3Obj.SetActive(false);
             if (layer4Obj != null) layer4Obj.SetActive(false);
+            if (progressionMenu != null) progressionMenu.HideAll();
             if (settingsPopupObj != null) settingsPopupObj.SetActive(false);
-            
+
             // Revert Camera Zoom if active
             StartCoroutine(LerpCameraToDefault());
         }
@@ -1184,6 +1308,33 @@ namespace TubityWAI
             ShowLayer2();
         }
 
+        /// <summary>Opens Progression Test 1 - the 128-level ladder, on its own save data.</summary>
+        private void ShowProgressionMenu()
+        {
+            if (progressionMenu == null) return;
+            SetTopLevelMenuVisible(false);
+            SetAttractHeroVisible(false);
+            if (layer1Obj != null) layer1Obj.SetActive(false);
+            if (layer2Obj != null) layer2Obj.SetActive(false);
+            if (layer3Obj != null) layer3Obj.SetActive(false);
+            if (layer4Obj != null) layer4Obj.SetActive(false);
+            if (settingsPopupObj != null) settingsPopupObj.SetActive(false);
+            progressionMenu.ShowWorlds();
+        }
+
+        private void ShowEndlessMenu()
+        {
+            if (progressionMenu == null) return;
+            SetTopLevelMenuVisible(false);
+            SetAttractHeroVisible(false);
+            if (layer1Obj != null) layer1Obj.SetActive(false);
+            if (layer2Obj != null) layer2Obj.SetActive(false);
+            if (layer3Obj != null) layer3Obj.SetActive(false);
+            if (layer4Obj != null) layer4Obj.SetActive(false);
+            if (settingsPopupObj != null) settingsPopupObj.SetActive(false);
+            progressionMenu.ShowEndless();
+        }
+
         private void ShowTestLevels()
         {
             SetTopLevelMenuVisible(false);
@@ -1252,7 +1403,10 @@ namespace TubityWAI
 
         private void LaunchGame(LevelConfig config)
         {
-            if (!config.isTestLevel && !GameManager.IsLevelUnlocked(config.levelNumber))
+            // Progression Test 1 and the endless modes keep their own unlock rules and their own
+            // save data; their menus have already checked them, so the campaign gate is skipped.
+            bool ownsItsGate = config.isTestLevel || Progression.ProgressionV2.IsProgressionLevel(config);
+            if (!ownsItsGate && !GameManager.IsLevelUnlocked(config.levelNumber))
             {
                 Debug.Log($"[MainMenu] Level {config.levelNumber} is locked; beat level {config.levelNumber - 1} first.");
                 return;
@@ -1276,6 +1430,41 @@ namespace TubityWAI
             if (GameSetup.Instance != null)
             {
                 GameSetup.Instance.StartGame(1, ftueConfig);
+            }
+        }
+
+        // ==========================================
+        // HOW TO PLAY (first-time user experience)
+        // ==========================================
+
+        private static bool HasSeenHowToPlay
+        {
+            get { return PlayerPrefs.GetInt(HowToPlaySeenKey, 0) == 1; }
+        }
+
+        private static void MarkHowToPlaySeen()
+        {
+            PlayerPrefs.SetInt(HowToPlaySeenKey, 1);
+            PlayerPrefs.Save();
+        }
+
+        /// <summary>
+        /// PLAY: the very first press runs the in-tube tutorial (FTUEManager)
+        /// instead of the sphere picker. The flag is set on launch, so quitting
+        /// the tutorial part-way never traps the player in it; the tutorial
+        /// sets it again on completion for good measure.
+        /// </summary>
+        private void OnPlayPressed()
+        {
+            if (!HasSeenHowToPlay)
+            {
+                Debug.Log($"[MainMenu] First PLAY: running the tutorial (scheme={TubityXInput.Current})...");
+                MarkHowToPlaySeen();
+                LaunchFTUELevel();
+            }
+            else
+            {
+                ShowSphereSelection3D();
             }
         }
 
@@ -1478,6 +1667,7 @@ namespace TubityWAI
         {
             Debug.Log("[MainMenu] Restoring game settings to default...");
             PlayerPrefs.DeleteKey("AdsRemoved");
+            PlayerPrefs.DeleteKey(HowToPlaySeenKey);   // PLAY teaches again on the next press
             PlayerPrefs.Save();
 
             selectedSphereCount = 1;

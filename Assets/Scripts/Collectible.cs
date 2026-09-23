@@ -132,7 +132,7 @@ namespace TubityWAI
             else if (type == CollectibleType.AddSpherePowerup)
             {
                 Debug.Log($"[Collectible] Add Sphere Powerup collected! Adding sphere.");
-                player.AddSphere();
+                player.RestoreSphere();
             }
 
             // Clean up the collectible object
