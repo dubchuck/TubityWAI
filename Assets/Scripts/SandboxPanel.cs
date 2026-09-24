@@ -271,7 +271,7 @@ namespace TubityWAI
                 case EnvironmentTheme.Thunderstorm: return "STORM";
                 case EnvironmentTheme.SunsetCanyon: return "CANYON";
                 case EnvironmentTheme.Clockwork: return "CLOCKWORK";
-                case EnvironmentTheme.SakuraGates: return "SAKURA";
+                case EnvironmentTheme.BlossomArbor: return "ARBOR";
                 case EnvironmentTheme.CandyClouds: return "CANDY";
                 default: return theme.ToString().ToUpperInvariant();
             }

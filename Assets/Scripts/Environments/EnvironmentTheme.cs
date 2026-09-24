@@ -28,7 +28,7 @@ namespace TubityWAI
         Thunderstorm,   // inside a storm cell, lightning all round
         SunsetCanyon,   // a desert canyon at golden hour
         Clockwork,      // the works of a giant clock
-        SakuraGates,    // a tunnel of torii gates under cherry blossom
+        BlossomArbor,   // a garden walk under flowering trellis arches
         CandyClouds     // a pastel sky of sweets
     }
 

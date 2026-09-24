@@ -24,7 +24,7 @@ namespace TubityWAI
                 case EnvironmentTheme.Thunderstorm: BuildThunderstorm(parent, props); break;
                 case EnvironmentTheme.SunsetCanyon: BuildSunsetCanyon(parent, props); break;
                 case EnvironmentTheme.Clockwork:    BuildClockwork(parent, props); break;
-                case EnvironmentTheme.SakuraGates:  BuildSakuraGates(parent, props); break;
+                case EnvironmentTheme.BlossomArbor: BuildBlossomArbor(parent, props); break;
                 case EnvironmentTheme.CandyClouds:  BuildCandyClouds(parent, props); break;
             }
         }
@@ -480,36 +480,47 @@ namespace TubityWAI
         }
 
         // ------------------------------------------------------------------
-        // SAKURA GATES: two torii per segment over the tube, cherry trees and
-        // stone lanterns below
+        // BLOSSOM ARBOR: a garden walk under trellis arches wound with vines
+        // and flowers, blossom trees and lamp posts below
         // ------------------------------------------------------------------
-        private static void BuildSakuraGates(Transform parent, List<Prop> props)
+        private static void BuildBlossomArbor(Transform parent, List<Prop> props)
         {
-            Material red = Mat("torii_red", new Color(0.86f, 0.18f, 0.10f), 0.12f, 0.35f);
-            Material black = Mat("torii_black", new Color(0.06f, 0.05f, 0.05f), 0f, 0.4f);
-            Material bark = Mat("sakura_bark", Color.white, 0f, 0.2f, 0f, false, 1f,
+            Material iron = Mat("arbor_iron", new Color(0.10f, 0.11f, 0.10f), 0f, 0.45f, 0.6f);
+            Material vine = Mat("arbor_vine", new Color(0.22f, 0.42f, 0.20f), 0.05f, 0.3f);
+            Material bark = Mat("arbor_bark", Color.white, 0f, 0.2f, 0f, false, 1f,
                                 ProceduralTextures.Bark(71, new Color(0.12f, 0.07f, 0.06f), new Color(0.30f, 0.20f, 0.18f)), 1f, 1f);
-            Material blossomA = Mat("sakura_blossom", new Color(1f, 0.72f, 0.84f), 0.12f, 0.25f);
-            Material blossomB = Mat("sakura_blossom_b", new Color(1f, 0.86f, 0.93f), 0.12f, 0.25f);
-            Material stone = Mat("sakura_stone", new Color(0.55f, 0.54f, 0.52f), 0f, 0.2f);
-            Material lamp = Mat("sakura_lamp", new Color(1f, 0.8f, 0.5f), 3f, 0.4f);
+            Material blossomA = Mat("arbor_blossom", new Color(1f, 0.72f, 0.84f), 0.12f, 0.25f);
+            Material blossomB = Mat("arbor_blossom_b", new Color(1f, 0.86f, 0.93f), 0.12f, 0.25f);
+            Material blossomC = Mat("arbor_blossom_c", new Color(0.86f, 0.74f, 1f), 0.12f, 0.25f);
+            Material lamp = Mat("arbor_lamp", new Color(1f, 0.82f, 0.55f), 3f, 0.4f);
+            Material[] blossoms = { blossomA, blossomB, blossomC };
 
             {
-                Prop p = Encircle(parent, "Torii", 0f, upright: true);
+                // Two arches per segment: a rounded iron trellis over the tube, feet down past
+                // it, a vine wound along it and clusters of flowers hanging off the top.
+                Prop p = Encircle(parent, "TrellisArch", 0f, upright: true);
                 Transform t = p.root.transform;
+                const float R = 9f;
                 for (int g = -1; g <= 1; g += 2)
                 {
                     float z = g * 5f;
+                    Vector3 at = new Vector3(0f, 0f, z);
+                    MeshObj(WorldMeshes.TorusArc(R, 0.28f, 200f), t, at, Vector3.one, iron, Quaternion.identity);
+                    MeshObj(WorldMeshes.TorusArc(R + 0.1f, 0.16f, 200f, 28, 6, 0.6f, 72 + g), t, at + new Vector3(0f, 0f, 0.2f), Vector3.one, vine, Quaternion.identity);
+
+                    // The arch ends 100 degrees either side of its top; posts carry it to the ground.
+                    float footX = R * Mathf.Sin(100f * Mathf.Deg2Rad);
+                    float footY = R * Mathf.Cos(100f * Mathf.Deg2Rad);
                     for (int side = -1; side <= 1; side += 2)
+                        MeshObj(ProceduralMeshes.Cone(83, 0.3f, 0.28f, footY + 10f, 8, 2, 0f, 0f, true), t, new Vector3(side * footX, -10f, z), Vector3.one, iron, Quaternion.identity);
+
+                    for (int k = 0; k < 9; k++)
                     {
-                        MeshObj(ProceduralMeshes.Cone(81, 0.55f, 0.46f, 18f, 12, 4, 0f, 0f, true), t, new Vector3(side * 7.4f, -10f, z), Vector3.one, red, Quaternion.identity);
-                        // The kasagi's upswept ends.
-                        Prim(PrimitiveType.Cube, t, new Vector3(side * 10.3f, 8.75f, z), new Vector3(2.4f, 0.7f, 1.3f), black, Quaternion.Euler(0f, 0f, side * 12f));
+                        float th = (-80f + k * 20f + Random.Range(-6f, 6f)) * Mathf.Deg2Rad;
+                        Vector3 pos = new Vector3(Mathf.Sin(th), Mathf.Cos(th), 0f) * (R + 0.3f) + at + Random.insideUnitSphere * 0.4f;
+                        MeshObj(ProceduralMeshes.Rock(k + 1020, 2, 0.25f, 1.4f), t, pos, Vector3.one * Random.Range(0.5f, 0.85f),
+                                blossoms[Random.Range(0, blossoms.Length)], Random.rotation);
                     }
-                    Prim(PrimitiveType.Cube, t, new Vector3(0f, 8.4f, z), new Vector3(19.2f, 0.8f, 1.3f), black, Quaternion.identity);   // kasagi
-                    Prim(PrimitiveType.Cube, t, new Vector3(0f, 7.7f, z), new Vector3(18f, 0.5f, 1.1f), red, Quaternion.identity);       // shimaki
-                    Prim(PrimitiveType.Cube, t, new Vector3(0f, 6.3f, z), new Vector3(17f, 0.5f, 0.75f), red, Quaternion.identity);      // nuki
-                    Prim(PrimitiveType.Cube, t, new Vector3(0f, 7.0f, z), new Vector3(0.6f, 1.4f, 0.5f), red, Quaternion.identity);      // gakuzuka
                 }
                 CastShadows(p);
                 props.Add(p);
@@ -517,7 +528,7 @@ namespace TubityWAI
 
             for (int i = 0; i < 3; i++)
             {
-                Prop p = NewProp(parent, "CherryTree", Placement.Grounded, 0.9f, 1.5f, 1f);
+                Prop p = NewProp(parent, "BlossomTree", Placement.Grounded, 0.9f, 1.5f, 1f);
                 float h = Random.Range(5f, 7f);
                 MeshObj(ProceduralMeshes.Cone(i + 1000, 0.5f, 0.25f, h, 8, 5, 0.15f, 0.6f, true), p.root.transform, Vector3.zero, Vector3.one, bark, Quaternion.identity);
                 for (int k = 0; k < 6; k++)
@@ -533,12 +544,12 @@ namespace TubityWAI
             }
 
             {
-                Prop p = NewProp(parent, "StoneLantern", Placement.Grounded, 0.9f, 1.3f, 1f);
+                // A garden lamp post: iron pole, a glowing globe under a small cap.
+                Prop p = NewProp(parent, "LampPost", Placement.Grounded, 0.9f, 1.3f, 1f);
                 Transform t = p.root.transform;
-                MeshObj(ProceduralMeshes.Cone(1100, 0.45f, 0.3f, 1f, 8, 1, 0f, 0f, true), t, Vector3.zero, Vector3.one, stone, Quaternion.identity);
-                Prim(PrimitiveType.Cube, t, new Vector3(0f, 1.4f, 0f), new Vector3(0.85f, 0.8f, 0.85f), stone, Quaternion.identity);
-                Prim(PrimitiveType.Cube, t, new Vector3(0f, 1.4f, 0f), new Vector3(0.55f, 0.45f, 0.9f), lamp, Quaternion.identity);
-                MeshObj(ProceduralMeshes.Cone(1101, 0.85f, 0.05f, 0.7f, 8, 1, 0f, 0f, true), t, new Vector3(0f, 1.8f, 0f), Vector3.one, stone, Quaternion.identity);
+                MeshObj(ProceduralMeshes.Cone(1100, 0.12f, 0.08f, 3.2f, 8, 1, 0f, 0f, true), t, Vector3.zero, Vector3.one, iron, Quaternion.identity);
+                Prim(PrimitiveType.Sphere, t, new Vector3(0f, 3.5f, 0f), Vector3.one * 0.55f, lamp, Quaternion.identity);
+                MeshObj(ProceduralMeshes.Cone(1101, 0.38f, 0.05f, 0.3f, 8, 1, 0f, 0f, true), t, new Vector3(0f, 3.75f, 0f), Vector3.one, iron, Quaternion.identity);
                 p.lowerHalfBias = true;
                 p.spread = 3f;
                 props.Add(p);

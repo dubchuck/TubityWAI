@@ -6,13 +6,13 @@ namespace TubityWAI
     /// The second set of worlds - ten themes built for the sandbox lab first. Same rules as the
     /// originals in EnvironmentTheme.cs: fog colour matches the horizon so far segments arrive
     /// unseen, every theme carries a magenta-family accent, and each palette leans on one
-    /// identity hue. The shapes that make these worlds read (walls, gates, gears, the sun, the
+    /// identity hue. The shapes that make these worlds read (walls, arches, gears, the sun, the
     /// black hole) live in EnvironmentScenery.Worlds.cs and EnvironmentBackdrops.cs.
     /// </summary>
     public static partial class EnvironmentPalettes
     {
         private static EnvironmentPalette prismHall, cavern, lavaTube, solarFlare, blackHole;
-        private static EnvironmentPalette thunderstorm, sunsetCanyon, clockwork, sakuraGates, candyClouds;
+        private static EnvironmentPalette thunderstorm, sunsetCanyon, clockwork, blossomArbor, candyClouds;
 
         private static EnvironmentPalette GetWorld(EnvironmentTheme theme)
         {
@@ -26,7 +26,7 @@ namespace TubityWAI
                 case EnvironmentTheme.Thunderstorm: return thunderstorm ?? (thunderstorm = BuildThunderstorm());
                 case EnvironmentTheme.SunsetCanyon: return sunsetCanyon ?? (sunsetCanyon = BuildSunsetCanyon());
                 case EnvironmentTheme.Clockwork:    return clockwork    ?? (clockwork    = BuildClockwork());
-                case EnvironmentTheme.SakuraGates:  return sakuraGates  ?? (sakuraGates  = BuildSakuraGates());
+                case EnvironmentTheme.BlossomArbor: return blossomArbor ?? (blossomArbor = BuildBlossomArbor());
                 case EnvironmentTheme.CandyClouds:  return candyClouds  ?? (candyClouds  = BuildCandyClouds());
                 default: return null;
             }
@@ -542,16 +542,16 @@ namespace TubityWAI
             };
         }
 
-        /// <summary>A tunnel of torii gates under cherry blossom at dusk; petals everywhere.</summary>
-        private static EnvironmentPalette BuildSakuraGates()
+        /// <summary>A garden walk at dusk under trellis arches heavy with flowers; petals everywhere.</summary>
+        private static EnvironmentPalette BuildBlossomArbor()
         {
             Color hue = new Color(1f, 0.62f, 0.78f);
             Color accent = TubityXPalette.Accent(hue, 0.2f);
 
             return new EnvironmentPalette
             {
-                theme = EnvironmentTheme.SakuraGates,
-                displayName = "Sakura Gates",
+                theme = EnvironmentTheme.BlossomArbor,
+                displayName = "Blossom Arbor",
 
                 skyTop = new Color(0.30f, 0.26f, 0.52f),
                 skyHorizon = new Color(0.98f, 0.66f, 0.72f),
