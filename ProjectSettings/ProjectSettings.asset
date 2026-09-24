@@ -174,7 +174,7 @@ PlayerSettings:
   buildNumber:
     Standalone: 1
     VisionOS: 0
-    iPhone: 202609110704
+    iPhone: 202609110707
     tvOS: 11
   overrideDefaultApplicationIdentifier: 1
   AndroidBundleVersionCode: 3
