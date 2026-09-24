@@ -316,7 +316,9 @@ namespace TubityWAI
                     for (int i = 0; i <= segments; i++)
                     {
                         float t = (float)i / segments;
-                        float w = width * Mathf.Pow(Mathf.Sin(Mathf.Clamp01(t) * Mathf.PI), 0.65f) * (0.25f + 0.75f * Mathf.Sin(Mathf.Min(1f, t * 1.4f) * Mathf.PI * 0.5f));
+                        // At the tip (t = 1) the float sine of PI comes out as a hair below zero, and a
+                        // fractional power of a negative is NaN; clamp so the tip is the point it means to be.
+                        float w = width * Mathf.Pow(Mathf.Max(0f, Mathf.Sin(Mathf.Clamp01(t) * Mathf.PI)), 0.65f) * (0.25f + 0.75f * Mathf.Sin(Mathf.Min(1f, t * 1.4f) * Mathf.PI * 0.5f));
                         float droop = -curl * t * t * length;
                         float z = t * length;
                         float edgeLift = fold * w;
