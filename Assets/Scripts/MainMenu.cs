@@ -926,7 +926,9 @@ namespace TubityWAI
             GameObject testBtnObj = GlassUIFactory.CreateGlassmorphicIconButton(topMenuObj.transform, new Vector2(350f, 55f), neonMagentaColor, "TEST LEVELS", Color.white, 20);
             testTab = testBtnObj.GetComponent<TubityXPanel>();
             testBtnObj.GetComponent<Button>().onClick.AddListener(() => { PlayMenuSelect(); ShowTestLevels(); });
-            testBtnObj.SetActive(testMenuButtonsUnlocked);
+            // Test Levels shows on iOS for now too, without the three-finger unlock, so TestFlight
+            // testers can reach the sandbox. Restore SetActive(testMenuButtonsUnlocked) before review.
+            testBtnObj.SetActive(true);
 
             // ==========================================
             // LAYER 3: TEST LEVELS LAYER
